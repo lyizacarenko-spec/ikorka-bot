@@ -769,7 +769,7 @@ bot.on("message", async (msg) => {
       }
     }
 // SCRIPTS MENU
-    if (text === "📜 Скрипти") {
+   if (text === "📜 Скрипти") {
       await bot.sendMessage(chatId, "📜 *Оберіть скрипт:*", {
         parse_mode: "Markdown",
         reply_markup: {

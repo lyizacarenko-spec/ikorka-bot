@@ -283,7 +283,7 @@ async function generateQuizQuestion(previousTopics: string[] = []) {
     : IKORKA_TOPICS[Math.floor(Math.random() * IKORKA_TOPICS.length)];
 
   const response = await groq.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
+    model: "llama3-70b-8192",,
     max_tokens: 1024,
     messages: [
       {

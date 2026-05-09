@@ -389,7 +389,6 @@ async function getRoleplayFeedback(scenario: any, history: any[]) {
 }
 
 // ─── MESSAGES ─────────────────────────────────────────────────────────────────
-const MAIN_MENU_KEYBOARD = {
  const MAIN_MENU_KEYBOARD = {
   reply_markup: {
     keyboard: [

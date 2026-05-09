@@ -2,7 +2,7 @@ import TelegramBot from "node-telegram-bot-api";
 import pkg from "pg";
 import Groq from "groq-sdk";
 import * as cron from "node-cron";
-
+  
 const { Pool } = pkg;
 
 // ─── ENV ─────────────────────────────────────────────────────────────────────

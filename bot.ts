@@ -738,6 +738,10 @@ async function sendNextQuizQuestion(chatId: number | string, telegramId: string,
 }
 
 // ─── SCHEDULER ────────────────────────────────────────────────────────────────
+// ─── SCHEDULER ────────────────────────────────────────────────────────────────
+const ADMIN_TELEGRAM_ID = "620838766";
+
+// Щогодинне нагадування про виклик дня
 cron.schedule("0 * * * *", async () => {
   const hourUtc = new Date().getUTCHours();
   const users = await getUsersForNotification(hourUtc);
@@ -754,6 +758,34 @@ cron.schedule("0 * * * *", async () => {
       { parse_mode: "Markdown" }
     ).catch(() => {});
     await upsertSession(user.telegram_id, "daily", { challengeId: challenge.id, date: challenge.date ?? date });
+  }
+});
+
+// Щотижневий звіт керівнику — п'ятниця о 17:00 Київ (14:00 UTC)
+cron.schedule("0 14 * * 5", async () => {
+  try {
+    const top = await getWeeklyLeaderboard(10);
+    const allRes = await pool.query("SELECT COUNT(*) as cnt FROM weekly_scores WHERE week_start = $1", [getCurrentWeekStart()]);
+    const totalParticipants = parseInt(allRes.rows[0]?.cnt ?? "0");
+    const totalQuestionsRes = await pool.query(
+      "SELECT COALESCE(SUM(total), 0) as total_q, COALESCE(SUM(score), 0) as total_correct FROM weekly_scores WHERE week_start = $1",
+      [getCurrentWeekStart()]
+    );
+    const totalQuestions = parseInt(totalQuestionsRes.rows[0]?.total_q ?? "0");
+    const totalCorrect = parseInt(totalQuestionsRes.rows[0]?.total_correct ?? "0");
+    const avgPct = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
+    const medals = ["🥇", "🥈", "🥉"];
+    const topRows = top.length > 0
+      ? top.map((e, i) => `${medals[i] ?? `${i + 1}.`} *${e.firstName ?? e.username ?? "Анонім"}* — ${e.score}/${e.total} (${e.pct}%)`).join("\n")
+      : "_Ніхто не проходив квіз цього тижня_";
+    const weekStart = getCurrentWeekStart();
+    const weekEnd = new Date(weekStart);
+    weekEnd.setUTCDate(new Date(weekStart).getUTCDate() + 4);
+    const weekStr = `${new Date(weekStart).toLocaleDateString("uk-UA", { day: "numeric", month: "long", timeZone: "UTC" })} — ${weekEnd.toLocaleDateString("uk-UA", { day: "numeric", month: "long", timeZone: "UTC" })}`;
+    const report = `📊 *Щотижневий звіт Ikorka Shop*\n📅 ${weekStr}\n\n👥 Учасників: *${totalParticipants}*\n📝 Питань пройдено: *${totalQuestions}*\n✅ Середній результат: *${avgPct}%*\n\n🏆 *Топ менеджерів тижня:*\n${topRows}\n\n_Звіт сформовано автоматично_`;
+    await bot.sendMessage(ADMIN_TELEGRAM_ID, report, { parse_mode: "Markdown" });
+  } catch (err) {
+    console.error("Weekly report error:", err);
   }
 });
 

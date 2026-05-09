@@ -645,6 +645,15 @@ bot.on("message", async (msg) => {
       s.questionNumber++;
       s.previousTopics = [...(s.previousTopics ?? []), s.currentQuestion.topic];
       s.currentQuestion = null;
+
+      if (s.sessionTotal >= 15) {
+        const pct2 = Math.round((s.sessionScore / s.sessionTotal) * 100);
+        const level = pct2 >= 80 ? "🏆 Експерт" : pct2 >= 60 ? "📈 Добре" : pct2 >= 40 ? "📚 Непогано" : "🌱 Продовжуйте вчитись";
+        await deleteSession(telegramId);
+        await sendMain(chatId, `🏁 *Квіз завершено!*\n\n📊 Результат: ${s.sessionScore}/15 (${pct2}%)\n${level}\n\nПродовжуйте практикуватися!`);
+        return;
+      }
+
       await new Promise(r => setTimeout(r, 1200));
       await bot.sendMessage(chatId, "🤔 Генерую наступне питання...", { parse_mode: "Markdown" });
       await sendNextQuizQuestion(chatId, telegramId, s);

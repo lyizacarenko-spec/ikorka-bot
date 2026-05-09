@@ -390,16 +390,18 @@ async function getRoleplayFeedback(scenario: any, history: any[]) {
 
 // ─── MESSAGES ─────────────────────────────────────────────────────────────────
 const MAIN_MENU_KEYBOARD = {
+ const MAIN_MENU_KEYBOARD = {
   reply_markup: {
     keyboard: [
       [{ text: "🧠 Квіз" }, { text: "🎭 Рольова гра" }],
       [{ text: "📅 Виклик дня" }, { text: "🏆 Лідерборд" }],
       [{ text: "🗓 Тижень" }, { text: "📊 Моя статистика" }],
-      [{ text: "ℹ️ Допомога" }],
+      [{ text: "📜 Скрипти" }, { text: "ℹ️ Допомога" }],
     ],
     resize_keyboard: true,
     persistent: true,
   },
+
 };
 
 const NOTIFY_TIME_KEYBOARD = {
@@ -767,7 +769,64 @@ bot.on("message", async (msg) => {
         return;
       }
     }
+// SCRIPTS MENU
+    if (text === "📜 Скрипти") {
+      await bot.sendMessage(chatId, "📜 *Оберіть скрипт:*", {
+        parse_mode: "Markdown",
+        reply_markup: {
+          keyboard: [
+            [{ text: "💰 Скрипт: Дорого" }, { text: "📦 Скрипт: Закриття" }],
+            [{ text: "🤝 Скрипт: Теплий дзвінок" }],
+            [{ text: "🧮 Калькулятор знижок" }, { text: "🏠 Головне меню" }],
+          ],
+          resize_keyboard: true,
+        },
+      });
+      return;
+    }
 
+    if (text === "💰 Скрипт: Дорого") {
+      await bot.sendMessage(chatId, SCRIPTS.doroho, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
+      return;
+    }
+
+    if (text === "📦 Скрипт: Закриття") {
+      await bot.sendMessage(chatId, SCRIPTS.zakryttia, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
+      return;
+    }
+
+    if (text === "🤝 Скрипт: Теплий дзвінок") {
+      await bot.sendMessage(chatId, SCRIPTS.teplyi, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
+      return;
+    }
+
+    if (text === "🧮 Калькулятор знижок") {
+      await bot.sendMessage(chatId,
+        `🧮 *Калькулятор знижок*\n\nНадішліть ціну і знижку у форматі:\n*ціна знижка%*\n\nПриклад: \`459 10\` або \`539 7\``,
+        { parse_mode: "Markdown" }
+      );
+      await upsertSession(telegramId, "calc", {});
+      return;
+    }
+
+    if (session?.mode === "calc") {
+      const parts = text.trim().split(/\s+/);
+      if (parts.length === 2) {
+        const price = parseInt(parts[0]);
+        const disc = parseInt(parts[1].replace("%", ""));
+        if (!isNaN(price) && !isNaN(disc) && disc >= 0 && disc <= 50) {
+          const discPrice = calcDiscount(price, disc);
+          const saved = price - discPrice;
+          await deleteSession(telegramId);
+          await sendMain(chatId,
+            `🧮 *Результат:*\n\nПовна ціна: *${price} грн*\nЗнижка: *${disc}%*\nЦіна зі знижкою: *${discPrice} грн*\nЕкономія: *${saved} грн*`
+          );
+          return;
+        }
+      }
+      await bot.sendMessage(chatId, "⚠️ Введіть у форматі: *ціна знижка*\nНаприклад: `459 10`", { parse_mode: "Markdown" });
+      return;
+    }
     await sendMain(chatId, "👋 Оберіть режим для початку:");
   } catch (err) {
     console.error("Bot error:", err);

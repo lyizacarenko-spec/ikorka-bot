@@ -2,7 +2,7 @@ import TelegramBot from "node-telegram-bot-api";
 import pkg from "pg";
 import Groq from "groq-sdk";
 import * as cron from "node-cron";
-  
+
 const { Pool } = pkg;
 
 // ─── ENV ─────────────────────────────────────────────────────────────────────
@@ -283,7 +283,7 @@ async function generateQuizQuestion(previousTopics: string[] = []) {
     : IKORKA_TOPICS[Math.floor(Math.random() * IKORKA_TOPICS.length)];
 
   const response = await groq.chat.completions.create({
-    model: "llama3-70b-8192",
+    model: "llama-3.3-70b-versatile",
     max_tokens: 1024,
     messages: [
       {
@@ -388,32 +388,6 @@ async function getRoleplayFeedback(scenario: any, history: any[]) {
   return response.choices[0]?.message?.content ?? "Гарна спроба! Продовжуйте практикуватися.";
 }
 
-// ─── MESSAGES ─────────────────────────────────────────────────────────────────
- const MAIN_MENU_KEYBOARD = {
-  reply_markup: {
-    keyboard: [
-      [{ text: "🧠 Квіз" }, { text: "🎭 Рольова гра" }],
-      [{ text: "📅 Виклик дня" }, { text: "🏆 Лідерборд" }],
-      [{ text: "🗓 Тижень" }, { text: "📊 Моя статистика" }],
-      [{ text: "📜 Скрипти" }, { text: "ℹ️ Допомога" }],
-    ],
-    resize_keyboard: true,
-    persistent: true,
-  },
-
-};
-
-const NOTIFY_TIME_KEYBOARD = {
-  reply_markup: {
-    keyboard: [
-      [{ text: "⏰ 7:00 Київ" }, { text: "⏰ 8:00 Київ" }, { text: "⏰ 9:00 Київ" }],
-      [{ text: "⏰ 10:00 Київ" }, { text: "⏰ 11:00 Київ" }, { text: "⏰ 12:00 Київ" }],
-      [{ text: "🏠 Головне меню" }],
-    ],
-    resize_keyboard: true,
-    one_time_keyboard: true,
-  },
-};
 // ─── SCRIPTS ──────────────────────────────────────────────────────────────────
 const SCRIPTS: Record<string, string> = {
   doroho: `💰 *Скрипт: Робота з "Дорого"*
@@ -428,7 +402,7 @@ const SCRIPTS: Record<string, string> = {
 "В АТБ ікра з консервантами, термін — роки. Наша: ікра + сіль + олія. Різниця відчувається одразу!"
 
 4️⃣ *Запропонуй вигоду*
-"Зараз є акція 4=6 з безкоштовною доставкою — фактично 2 банки у подарунок. Давайте порахуємо?"
+"Зараз є акція 4=6 з безкоштовною доставкою — фактично 2 банки у подарунок!"
 
 5️⃣ *Закрий*
 "Оформлюємо на завтра чи на п'ятницю?"`,
@@ -442,10 +416,10 @@ const SCRIPTS: Record<string, string> = {
 "До цього замовлення чудово підійде [вид] — інший смак, цікаво порівняти. Додаємо?"
 
 3️⃣ *Уточни доставку*
-"Доставка Новою Поштою. Пам'ятайте — при накладеному платежі комісія НП: 2% + 20 грн."
+"Доставка Новою Поштою. При накладеному платежі комісія НП: 2% + 20 грн."
 
 4️⃣ *Закрий питанням*
-"Оплата карткою чи накладеним? Доставка на завтра чи на після завтра?"
+"Оплата карткою чи накладеним? Доставка на завтра чи після завтра?"
 
 5️⃣ *Підтвердження*
 "Чудово! Записую замовлення. Номер телефону для НП?"`,
@@ -455,11 +429,11 @@ const SCRIPTS: Record<string, string> = {
 1️⃣ *Привітання*
 "Добрий день, [ім'я]! Це [ваше ім'я] з Ikorka Shop. Ви у нас купували [вид ікри] — сподобалось?"
 
-2️⃣ *Приводь причину дзвінка*
-"Телефоную, бо у нас з'явилась нова партія свіжої ікри + зараз діє акція 4=6 з безкоштовною доставкою — подумав(ла) про вас одразу!"
+2️⃣ *Причина дзвінка*
+"Телефоную, бо з'явилась нова партія + акція 4=6 з безкоштовною доставкою — подумав(ла) про вас!"
 
 3️⃣ *Згадай попереднє замовлення*
-"Минулого разу брали горбушу — хочете знову чи спробуємо щось нове? Зараз дуже добра Кета Преміум — крупніше зерно, насиченіший смак."
+"Минулого разу брали горбушу — хочете знову чи спробуємо щось нове? Зараз дуже добра Кета Преміум!"
 
 4️⃣ *Запропонуй вигоду*
 "При замовленні від 4 банок — доставка безкоштовна. Виходить дуже вигідно!"
@@ -471,6 +445,33 @@ const SCRIPTS: Record<string, string> = {
 function calcDiscount(price: number, pct: number): number {
   return Math.round(price * (1 - pct / 100));
 }
+
+// ─── MESSAGES ─────────────────────────────────────────────────────────────────
+const MAIN_MENU_KEYBOARD = {
+  reply_markup: {
+    keyboard: [
+      [{ text: "🧠 Квіз" }, { text: "🎭 Рольова гра" }],
+      [{ text: "📅 Виклик дня" }, { text: "🏆 Лідерборд" }],
+      [{ text: "🗓 Тижень" }, { text: "📊 Моя статистика" }],
+      [{ text: "📜 Скрипти" }, { text: "ℹ️ Допомога" }],
+    ],
+    resize_keyboard: true,
+    persistent: true,
+  },
+};
+
+const NOTIFY_TIME_KEYBOARD = {
+  reply_markup: {
+    keyboard: [
+      [{ text: "⏰ 7:00 Київ" }, { text: "⏰ 8:00 Київ" }, { text: "⏰ 9:00 Київ" }],
+      [{ text: "⏰ 10:00 Київ" }, { text: "⏰ 11:00 Київ" }, { text: "⏰ 12:00 Київ" }],
+      [{ text: "🏠 Головне меню" }],
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: true,
+  },
+};
+
 const WELCOME_MESSAGE = `👋 Ласкаво просимо до *тренажера продажів Ikorka Shop*!
 
 🧠 *Квіз* — перевірте знання видів ікри, цін та акцій.
@@ -768,8 +769,9 @@ bot.on("message", async (msg) => {
         return;
       }
     }
-// SCRIPTS MENU
-   if (text === "📜 Скрипти") {
+
+    // SCRIPTS MENU
+    if (text === "📜 Скрипти") {
       await bot.sendMessage(chatId, "📜 *Оберіть скрипт:*", {
         parse_mode: "Markdown",
         reply_markup: {
@@ -801,7 +803,7 @@ bot.on("message", async (msg) => {
 
     if (text === "🧮 Калькулятор знижок") {
       await bot.sendMessage(chatId,
-        `🧮 *Калькулятор знижок*\n\nНадішліть ціну і знижку у форматі:\n*ціна знижка%*\n\nПриклад: \`459 10\` або \`539 7\``,
+        `🧮 *Калькулятор знижок*\n\nНадішліть ціну і знижку у форматі:\n*ціна знижка*\n\nПриклад: \`459 10\` або \`539 7\``,
         { parse_mode: "Markdown" }
       );
       await upsertSession(telegramId, "calc", {});
@@ -826,6 +828,7 @@ bot.on("message", async (msg) => {
       await bot.sendMessage(chatId, "⚠️ Введіть у форматі: *ціна знижка*\nНаприклад: `459 10`", { parse_mode: "Markdown" });
       return;
     }
+
     await sendMain(chatId, "👋 Оберіть режим для початку:");
   } catch (err) {
     console.error("Bot error:", err);
@@ -852,10 +855,8 @@ async function sendNextQuizQuestion(chatId: number | string, telegramId: string,
 }
 
 // ─── SCHEDULER ────────────────────────────────────────────────────────────────
-// ─── SCHEDULER ────────────────────────────────────────────────────────────────
 const ADMIN_TELEGRAM_ID = "620838766";
 
-// Щогодинне нагадування про виклик дня
 cron.schedule("0 * * * *", async () => {
   const hourUtc = new Date().getUTCHours();
   const users = await getUsersForNotification(hourUtc);
@@ -872,34 +873,6 @@ cron.schedule("0 * * * *", async () => {
       { parse_mode: "Markdown" }
     ).catch(() => {});
     await upsertSession(user.telegram_id, "daily", { challengeId: challenge.id, date: challenge.date ?? date });
-  }
-});
-
-// Щотижневий звіт керівнику — п'ятниця о 17:00 Київ (14:00 UTC)
-cron.schedule("0 14 * * 5", async () => {
-  try {
-    const top = await getWeeklyLeaderboard(10);
-    const allRes = await pool.query("SELECT COUNT(*) as cnt FROM weekly_scores WHERE week_start = $1", [getCurrentWeekStart()]);
-    const totalParticipants = parseInt(allRes.rows[0]?.cnt ?? "0");
-    const totalQuestionsRes = await pool.query(
-      "SELECT COALESCE(SUM(total), 0) as total_q, COALESCE(SUM(score), 0) as total_correct FROM weekly_scores WHERE week_start = $1",
-      [getCurrentWeekStart()]
-    );
-    const totalQuestions = parseInt(totalQuestionsRes.rows[0]?.total_q ?? "0");
-    const totalCorrect = parseInt(totalQuestionsRes.rows[0]?.total_correct ?? "0");
-    const avgPct = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
-    const medals = ["🥇", "🥈", "🥉"];
-    const topRows = top.length > 0
-      ? top.map((e, i) => `${medals[i] ?? `${i + 1}.`} *${e.firstName ?? e.username ?? "Анонім"}* — ${e.score}/${e.total} (${e.pct}%)`).join("\n")
-      : "_Ніхто не проходив квіз цього тижня_";
-    const weekStart = getCurrentWeekStart();
-    const weekEnd = new Date(weekStart);
-    weekEnd.setUTCDate(new Date(weekStart).getUTCDate() + 4);
-    const weekStr = `${new Date(weekStart).toLocaleDateString("uk-UA", { day: "numeric", month: "long", timeZone: "UTC" })} — ${weekEnd.toLocaleDateString("uk-UA", { day: "numeric", month: "long", timeZone: "UTC" })}`;
-    const report = `📊 *Щотижневий звіт Ikorka Shop*\n📅 ${weekStr}\n\n👥 Учасників: *${totalParticipants}*\n📝 Питань пройдено: *${totalQuestions}*\n✅ Середній результат: *${avgPct}%*\n\n🏆 *Топ менеджерів тижня:*\n${topRows}\n\n_Звіт сформовано автоматично_`;
-    await bot.sendMessage(ADMIN_TELEGRAM_ID, report, { parse_mode: "Markdown" });
-  } catch (err) {
-    console.error("Weekly report error:", err);
   }
 });
 

@@ -883,5 +883,166 @@ initDB().then(() => {
   console.error("Failed to init:", err);
   process.exit(1);
 });
+// ─── AUDIO ANALYSIS ───────────────────────────────────────────────────────────
+bot.on("voice", async (msg) => {
+  const chatId = msg.chat.id;
+  const telegramId = String(msg.from?.id ?? chatId);
+  try {
+    await bot.sendMessage(chatId, "🎙️ Отримав аудіо! Транскрибую...", { parse_mode: "Markdown" });
+    const fileId = msg.voice!.file_id;
+    const fileInfo = await bot.getFile(fileId);
+    const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileInfo.file_path}`;
+    const audioResponse = await fetch(fileUrl);
+    const audioBuffer = await audioResponse.arrayBuffer();
+    const audioBlob = new Blob([audioBuffer], { type: "audio/ogg" });
+    const formData = new FormData();
+    formData.append("file", audioBlob, "audio.ogg");
+    formData.append("model", "whisper-large-v3");
+    formData.append("language", "uk");
+    formData.append("response_format", "text");
+    const transcribeRes = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${GROQ_API_KEY}` },
+      body: formData,
+    });
+    const transcript = await transcribeRes.text();
+    if (!transcript || transcript.length < 10) {
+      await bot.sendMessage(chatId, "⚠️ Не вдалося розпізнати аудіо. Спробуйте ще раз.");
+      return;
+    }
+    await bot.sendMessage(chatId, `📝 *Транскрипція:*\n\n${transcript}`, { parse_mode: "Markdown" });
+    await bot.sendMessage(chatId, "🔍 Аналізую дзвінок...", { parse_mode: "Markdown" });
+    const analysis = await groq.chat.completions.create({
+      model: "llama3-70b-8192",
+      max_tokens: 1500,
+      messages: [
+        {
+          role: "system",
+          content: `Ти — експерт з аналізу дзвінків менеджерів з продажу ікри в магазині Ikorka Shop.
 
+Проаналізуй транскрипцію дзвінку і дай структурований розбір.
+
+ЧЕК-ЛИСТ IKORKA SHOP:
+- Привітання та встановлення контакту
+- Виявлення потреби (відкриті питання)
+- Презентація продукту (вид ікри, упаковка, смак)
+- Озвучення акцій (1+1=3, 3=4, 4=6)
+- Допродаж (Преміум версія, додаткові позиції)
+- Робота із запереченнями (ціна, якість)
+- Озвучення комісії НП (2%+20 грн)
+- Закриття на замовлення
+- Злив на перезвон (негативний фактор)
+
+Відповідай СТРОГО в такому форматі:
+
+✅ *Сильні сторони:*
+[перелік що зроблено добре]
+
+❌ *Помилки:*
+[перелік помилок]
+
+📊 *Оцінка:*
+- Контакт: X/10
+- Виявлення потреби: X/10
+- Презентація: X/10
+- Робота з запереченнями: X/10
+- Закриття: X/10
+- Допродаж: X/10
+
+🏆 *Загальна оцінка: X/10*
+
+💡 *Головна порада:*
+[одна конкретна порада для покращення]`,
+        },
+        { role: "user", content: `Транскрипція дзвінку:\n\n${transcript}` },
+      ],
+    });
+    const analysisText = analysis.choices[0]?.message?.content ?? "Не вдалося проаналізувати.";
+    await bot.sendMessage(chatId, `🎯 *Аналіз дзвінку:*\n\n${analysisText}`, { parse_mode: "Markdown" });
+  } catch (err) {
+    console.error("Voice analysis error:", err);
+    await bot.sendMessage(chatId, "⚠️ Помилка аналізу. Спробуйте ще раз.");
+  }
+});
+
+bot.on("audio", async (msg) => {
+  const chatId = msg.chat.id;
+  const telegramId = String(msg.from?.id ?? chatId);
+  try {
+    await bot.sendMessage(chatId, "🎙️ Отримав аудіофайл! Транскрибую...", { parse_mode: "Markdown" });
+    const fileId = msg.audio!.file_id;
+    const fileInfo = await bot.getFile(fileId);
+    const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileInfo.file_path}`;
+    const audioResponse = await fetch(fileUrl);
+    const audioBuffer = await audioResponse.arrayBuffer();
+    const audioBlob = new Blob([audioBuffer], { type: "audio/mpeg" });
+    const formData = new FormData();
+    formData.append("file", audioBlob, "audio.mp3");
+    formData.append("model", "whisper-large-v3");
+    formData.append("language", "uk");
+    formData.append("response_format", "text");
+    const transcribeRes = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${GROQ_API_KEY}` },
+      body: formData,
+    });
+    const transcript = await transcribeRes.text();
+    if (!transcript || transcript.length < 10) {
+      await bot.sendMessage(chatId, "⚠️ Не вдалося розпізнати аудіо. Спробуйте ще раз.");
+      return;
+    }
+    await bot.sendMessage(chatId, `📝 *Транскрипція:*\n\n${transcript}`, { parse_mode: "Markdown" });
+    await bot.sendMessage(chatId, "🔍 Аналізую дзвінок...", { parse_mode: "Markdown" });
+    const analysis = await groq.chat.completions.create({
+      model: "llama3-70b-8192",
+      max_tokens: 1500,
+      messages: [
+        {
+          role: "system",
+          content: `Ти — експерт з аналізу дзвінків менеджерів з продажу ікри в магазині Ikorka Shop.
+
+Проаналізуй транскрипцію дзвінку і дай структурований розбір.
+
+ЧЕК-ЛИСТ IKORKA SHOP:
+- Привітання та встановлення контакту
+- Виявлення потреби (відкриті питання)
+- Презентація продукту (вид ікри, упаковка, смак)
+- Озвучення акцій (1+1=3, 3=4, 4=6)
+- Допродаж (Преміум версія, додаткові позиції)
+- Робота із запереченнями (ціна, якість)
+- Озвучення комісії НП (2%+20 грн)
+- Закриття на замовлення
+- Злив на перезвон (негативний фактор)
+
+Відповідай СТРОГО в такому форматі:
+
+✅ *Сильні сторони:*
+[перелік що зроблено добре]
+
+❌ *Помилки:*
+[перелік помилок]
+
+📊 *Оцінка:*
+- Контакт: X/10
+- Виявлення потреби: X/10
+- Презентація: X/10
+- Робота з запереченнями: X/10
+- Закриття: X/10
+- Допродаж: X/10
+
+🏆 *Загальна оцінка: X/10*
+
+💡 *Головна порада:*
+[одна конкретна порада для покращення]`,
+        },
+        { role: "user", content: `Транскрипція дзвінку:\n\n${transcript}` },
+      ],
+    });
+    const analysisText = analysis.choices[0]?.message?.content ?? "Не вдалося проаналізувати.";
+    await bot.sendMessage(chatId, `🎯 *Аналіз дзвінку:*\n\n${analysisText}`, { parse_mode: "Markdown" });
+  } catch (err) {
+    console.error("Audio analysis error:", err);
+    await bot.sendMessage(chatId, "⚠️ Помилка аналізу. Спробуйте ще раз.");
+  }
+});
 bot.on("polling_error", (err) => console.error("Polling error:", err));

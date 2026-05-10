@@ -913,7 +913,7 @@ bot.on("voice", async (msg) => {
     await bot.sendMessage(chatId, `📝 *Транскрипція:*\n\n${transcript}`, { parse_mode: "Markdown" });
     await bot.sendMessage(chatId, "🔍 Аналізую дзвінок...", { parse_mode: "Markdown" });
     const analysis = await groq.chat.completions.create({
-      model: "llama3-70b-8192",
+      model: llama-3.3-70b-versatile,
       max_tokens: 1500,
       messages: [
         {

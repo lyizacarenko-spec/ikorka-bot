@@ -1,13 +1,13 @@
 import TelegramBot from "node-telegram-bot-api";
 import pkg from "pg";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import Groq from "groq-sdk";
 import * as cron from "node-cron";
 
 const { Pool } = pkg;
 
 // ─── ENV ─────────────────────────────────────────────────────────────────────
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
+const GROQ_API_KEY = process.env.GROQ_API_KEY!;
 const DATABASE_URL = process.env.DATABASE_URL!;
 // Фото зберігається в корені репо як welcome.png
 // Якщо файл є локально — використовуємо його, інакше fallback на старий URL
@@ -336,34 +336,33 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3, delayMs = 200
   throw new Error("Max retry attempts reached");
 }
 
-// ─── GEMINI ───────────────────────────────────────────────────────────────────
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+// ─── GROQ ─────────────────────────────────────────────────────────────────────
+const groq = new Groq({ apiKey: GROQ_API_KEY });
 
-// Хелпер — замінює groq.chat.completions.create()
 async function geminiChat(systemPrompt: string, userMessage: string, maxTokens = 1024): Promise<string> {
-  const model = genAI.getGenerativeModel({
-  model: "gemini-2.0-flash-lite",
-    systemInstruction: systemPrompt,
-    generationConfig: { maxOutputTokens: maxTokens },
+  const response = await groq.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    max_tokens: maxTokens,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ],
   });
-  const result = await model.generateContent(userMessage);
-  return result.response.text();
+  return response.choices[0]?.message?.content ?? "";
 }
 
-// Хелпер для multi-turn (рольові ігри з історією)
 async function geminiChatWithHistory(systemPrompt: string, history: Array<{role: string, content: string}>, userMessage: string, maxTokens = 300): Promise<string> {
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash-lite",
-    systemInstruction: systemPrompt,
-    generationConfig: { maxOutputTokens: maxTokens },
+  const messages = [
+    { role: "system" as const, content: systemPrompt },
+    ...history.map((m: any) => ({ role: m.role as "user" | "assistant", content: m.content })),
+    { role: "user" as const, content: userMessage },
+  ];
+  const response = await groq.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    max_tokens: maxTokens,
+    messages,
   });
-  const geminiHistory = history.map(m => ({
-    role: m.role === "user" ? "user" : "model",
-    parts: [{ text: m.content }],
-  }));
-  const chat = model.startChat({ history: geminiHistory });
-  const result = await chat.sendMessage(userMessage);
-  return result.response.text();
+  return response.choices[0]?.message?.content ?? "";
 }
 
 const IKORKA_KNOWLEDGE = `

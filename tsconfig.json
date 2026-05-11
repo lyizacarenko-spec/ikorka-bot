@@ -4,12 +4,10 @@
     "module": "CommonJS",
     "moduleResolution": "node",
     "outDir": "./dist",
-    "rootDir": "./",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["./*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "files": ["bot.ts"]
 }

@@ -1,4 +1,4 @@
-import TelegramBot from "node-telegram-bot-api";
+mport TelegramBot from "node-telegram-bot-api";
 import pkg from "pg";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import * as cron from "node-cron";

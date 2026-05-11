@@ -353,7 +353,7 @@ async function geminiChat(systemPrompt: string, userMessage: string, maxTokens =
 // Хелпер для multi-turn (рольові ігри з історією)
 async function geminiChatWithHistory(systemPrompt: string, history: Array<{role: string, content: string}>, userMessage: string, maxTokens = 300): Promise<string> {
   const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash-latest",
+    model: gemini-1.5-flash,
     systemInstruction: systemPrompt,
     generationConfig: { maxOutputTokens: maxTokens },
   });

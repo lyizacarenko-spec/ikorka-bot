@@ -342,7 +342,7 @@ const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 // Хелпер — замінює groq.chat.completions.create()
 async function geminiChat(systemPrompt: string, userMessage: string, maxTokens = 1024): Promise<string> {
   const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: "gemini-1.5-flash-latest",
     systemInstruction: systemPrompt,
     generationConfig: { maxOutputTokens: maxTokens },
   });
@@ -353,7 +353,7 @@ async function geminiChat(systemPrompt: string, userMessage: string, maxTokens =
 // Хелпер для multi-turn (рольові ігри з історією)
 async function geminiChatWithHistory(systemPrompt: string, history: Array<{role: string, content: string}>, userMessage: string, maxTokens = 300): Promise<string> {
   const model = genAI.getGenerativeModel({
-    model: gemini-1.5-flash,
+    model: "gemini-1.5-flash-latest",
     systemInstruction: systemPrompt,
     generationConfig: { maxOutputTokens: maxTokens },
   });
@@ -1280,4 +1280,3 @@ bot.on("callback_query", async (query) => {
     await bot.sendMessage(targetId, "🚫 На жаль, ваш запит на доступ відхилено. Зверніться до адміністратора.").catch(() => {});
   }
 });
-// updated

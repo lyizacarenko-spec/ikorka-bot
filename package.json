@@ -1,0 +1,24 @@
+{
+  "name": "ikorka-bot",
+  "version": "1.0.0",
+  "main": "dist/bot.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/bot.js",
+    "dev": "ts-node bot.ts"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "groq-sdk": "^0.3.3",
+    "node-cron": "^3.0.3",
+    "node-telegram-bot-api": "^0.64.0",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "@types/node-cron": "^3.0.11",
+    "@types/node-telegram-bot-api": "^0.64.6",
+    "@types/pg": "^8.11.0",
+    "typescript": "^5.3.3"
+  }
+}

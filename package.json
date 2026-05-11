@@ -6,7 +6,7 @@
   },
   "main": "dist/bot.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --force",
     "start": "node dist/bot.js",
     "dev": "ts-node bot.ts"
   },

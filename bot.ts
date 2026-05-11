@@ -1280,3 +1280,4 @@ bot.on("callback_query", async (query) => {
     await bot.sendMessage(targetId, "🚫 На жаль, ваш запит на доступ відхилено. Зверніться до адміністратора.").catch(() => {});
   }
 });
+// updated

@@ -521,7 +521,9 @@ JSON:
   if (uniqueOptions.size < 4) {
     return generateQuizQuestion(previousTopics, previousQuestions, attempt + 1);
   }
-
+parsed.question = sanitizeUkrainian(parsed.question);
+  parsed.explanation = sanitizeUkrainian(parsed.explanation);
+  parsed.options = parsed.options.map((o: string) => sanitizeUkrainian(o));
   return parsed;
 }
 

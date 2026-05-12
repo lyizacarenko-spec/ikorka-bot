@@ -338,7 +338,14 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3, delayMs = 200
 
 // ─── GROQ ─────────────────────────────────────────────────────────────────────
 const groq = new Groq({ apiKey: GROQ_API_KEY });
-
+// Прибирає символи не-кириличних алфавітів
+function sanitizeUkrainian(text: string): string {
+  return text
+    .replace(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g, "")
+    .replace(/[\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
 async function geminiChat(systemPrompt: string, userMessage: string, maxTokens = 1024): Promise<string> {
   const response = await groq.chat.completions.create({
     model: "llama-3.3-70b-versatile",

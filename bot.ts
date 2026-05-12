@@ -1216,7 +1216,35 @@ async function transcribeAudio(fileId: string, mimeType: string): Promise<string
 
 bot.on("voice", async (msg) => {
   const chatId = msg.chat.id;
+  const telegramId = String(msg.from?.id ?? chatId);
   try {
+    const session = await getActiveSession(telegramId);
+
+    // Якщо активна рольова гра — передаємо голос як повідомлення клієнту
+    if (session?.mode === "roleplay") {
+      await bot.sendChatAction(chatId, "typing");
+      const transcript = await transcribeAudio(msg.voice!.file_id, "audio/ogg");
+      if (!transcript || transcript.length < 3) {
+        await bot.sendMessage(chatId, "⚠️ Не вдалося розпізнати. Спробуйте ще раз.");
+        return;
+      }
+      // Показуємо що сказав менеджер
+      await bot.sendMessage(chatId, `🎤 *Ви:* ${transcript}`, { parse_mode: "Markdown" });
+      // Передаємо в рольову гру як текст
+      const s = session.state as any;
+      const scenario = SCENARIOS.find(sc => sc.title === s.scenario?.title) ?? SCENARIOS[0];
+      const response = await getRoleplayResponse(scenario, s.history ?? [], transcript);
+      s.history = [...(s.history ?? []), { role: "user", content: transcript }, { role: "assistant", content: response }];
+      s.exchangeCount = (s.exchangeCount ?? 0) + 1;
+      await upsertSession(telegramId, "roleplay", s);
+      await bot.sendMessage(chatId, `👤 *Клієнт:* ${response}`, { parse_mode: "Markdown" });
+      if (s.exchangeCount === 8) {
+        await bot.sendMessage(chatId, "💡 _8 обмінів. Напишіть /end для розбору або продовжуйте!_", { parse_mode: "Markdown" });
+      }
+      return;
+    }
+
+    // Інакше — стандартний аналіз дзвінку
     await bot.sendMessage(chatId, "🎙️ Отримав голосове! Транскрибую...", { parse_mode: "Markdown" });
     const transcript = await transcribeAudio(msg.voice!.file_id, "audio/ogg");
     if (!transcript || transcript.length < 10) {
@@ -1231,8 +1259,6 @@ bot.on("voice", async (msg) => {
     await bot.sendMessage(chatId, "⚠️ Помилка аналізу. Спробуйте ще раз.");
   }
 });
-
-bot.on("audio", async (msg) => {
   const chatId = msg.chat.id;
   try {
     await bot.sendMessage(chatId, "🎙️ Отримав аудіофайл! Транскрибую...", { parse_mode: "Markdown" });

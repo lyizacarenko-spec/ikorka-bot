@@ -1205,6 +1205,7 @@ async function transcribeAudio(fileId: string, mimeType: string): Promise<string
   formData.append("model", "whisper-large-v3");
   formData.append("language", "uk");
   formData.append("response_format", "text");
+  formData.append("prompt", "Магазин ікри Ikorka Shop. Горбуша, Лосось, Кета, Форель, Кижуч, Веслонос, Осетер, Щука. Менеджер з продажу. Нова Пошта.");
   const transcribeRes = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
     method: "POST",
     headers: { "Authorization": `Bearer ${groqKey}` },

@@ -1259,6 +1259,7 @@ bot.on("voice", async (msg) => {
     await bot.sendMessage(chatId, "⚠️ Помилка аналізу. Спробуйте ще раз.");
   }
 });
+bot.on("audio", async (msg) => {
   const chatId = msg.chat.id;
   try {
     await bot.sendMessage(chatId, "🎙️ Отримав аудіофайл! Транскрибую...", { parse_mode: "Markdown" });

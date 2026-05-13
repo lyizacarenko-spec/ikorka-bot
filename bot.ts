@@ -1172,7 +1172,8 @@ cron.schedule("0 * * * *", async () => {
 });
 
 // ─── START ────────────────────────────────────────────────────────────────────
-initDB().then(() => {
+initDB().then(async () => {
+  await bot.deleteWebHook({ drop_pending_updates: true });
   console.log("🤖 Bot started!");
 }).catch(err => {
   console.error("Failed to init:", err);

@@ -1303,7 +1303,10 @@ bot.on("callback_query", async (query) => {
     ).catch(() => {});
     // Повідомляємо користувача
     await bot.sendPhoto(targetId, getWelcomePhoto() as any).catch(() => {});
-    await bot.sendMessage(targetId, WELCOME_MESSAGE, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD }).catch(() => {});
+   await bot.sendMessage(targetId, WELCOME_MESSAGE, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD }).catch(async () => {
+  // Якщо Markdown не спрацював — відправляємо без форматування
+  await bot.sendMessage(targetId, WELCOME_MESSAGE.replace(/\*/g, ""), MAIN_MENU_KEYBOARD).catch(() => {});
+});
   }
 
   if (rejectMatch) {

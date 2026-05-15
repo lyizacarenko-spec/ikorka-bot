@@ -1080,14 +1080,119 @@ bot.on("message", async (msg) => {
       return;
     }
 
-    if (text === "🧮 Калькулятор знижок") {
-      await bot.sendMessage(chatId,
-        `🧮 *Калькулятор знижок*\n\nНадішліть ціну і знижку у форматі:\n*ціна знижка*\n\nПриклад: \`459 10\` або \`539 7\``,
-        { parse_mode: "Markdown" }
-      );
-      await upsertSession(telegramId, "calc", {});
-      return;
+    if (text === "🧮 Калькулятор акцій" || text === "🧮 Калькулятор знижок") {
+  await bot.sendMessage(chatId,
+    `🧮 *Калькулятор акцій*\n\nНадішліть список банок у форматі:\n*назва кількість*\n\nПриклад:\n\`горбуша 2\nкета 2\nосетер преміум 2\`\n\nЯ порахую по акціях:\n• 1+1=3 (3-тя безкоштовна, -5%)\n• 3=4 (4-та безкоштовна)\n• 3=5 (5-та і 6-та безкоштовні, без безкоштовної доставки)\n• 4=6 (5-та і 6-та безкоштовні + безкоштовна доставка)`,
+    { parse_mode: "Markdown" }
+  );
+  await upsertSession(telegramId, "calc_promo", {});
+  return;
+}
+
+if (session?.mode === "calc_promo") {
+  const PRICES: Record<string, { price: number; label: string }> = {
+    "щука": { price: 429, label: "Щука скло 500г" },
+    "горбуша": { price: 449, label: "Горбуша скло 440г" },
+    "горбуша преміум": { price: 569, label: "Горбуша Преміум скло 500г" },
+    "форель": { price: 459, label: "Форель скло 440г" },
+    "лосось": { price: 509, label: "Лосось скло 500г" },
+    "кижуч": { price: 509, label: "Кижуч скло 500г" },
+    "кета": { price: 539, label: "Кета скло 500г" },
+    "кета преміум": { price: 609, label: "Кета Преміум скло 500г" },
+    "веслонос": { price: 559, label: "Веслонос скло 500г" },
+    "осетер": { price: 549, label: "Осетер скло 440г" },
+    "осетер преміум": { price: 629, label: "Осетер Преміум скло 500г" },
+    "чорна": { price: 629, label: "Осетер Преміум скло 500г" },
+    "чорна осетрова": { price: 629, label: "Осетер Преміум скло 500г" },
+  };
+
+  // Парсимо введення
+  const lines = text.trim().split("\n");
+  const items: Array<{ label: string; price: number; qty: number }> = [];
+  let parseError = false;
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const match = line.trim().match(/^(.+?)\s+(\d+)$/);
+    if (!match) { parseError = true; break; }
+    const name = match[1].toLowerCase().trim();
+    const qty = parseInt(match[2]);
+    const found = PRICES[name];
+    if (!found) { parseError = true; break; }
+    items.push({ label: found.label, price: found.price, qty });
+  }
+
+  if (parseError || items.length === 0) {
+    await bot.sendMessage(chatId,
+      `⚠️ Не розпізнав. Надішліть у форматі:\n\`горбуша 2\nкета 1\nосетер преміум 2\``,
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  // Розгортаємо в масив банок (кожна банка окремо)
+  const allJars: Array<{ label: string; price: number }> = [];
+  for (const item of items) {
+    for (let i = 0; i < item.qty; i++) {
+      allJars.push({ label: item.label, price: item.price });
     }
+  }
+
+  // Сортуємо за ціною (для визначення безкоштовних — найдешевші)
+  const sorted = [...allJars].sort((a, b) => a.price - b.price);
+  const total = allJars.reduce((s, j) => s + j.price, 0);
+  const count = allJars.length;
+
+  // Розрахунок по акціях
+  function calcPromo(freeCount: number, extraDiscount = 0) {
+    const free = sorted.slice(0, freeCount);
+    const freeSum = free.reduce((s, j) => s + j.price, 0);
+    const paid = total - freeSum;
+    const discount = Math.round(paid * extraDiscount);
+    return Math.round(paid - discount);
+  }
+
+  let promoText = `📋 *Замовлення:*\n`;
+  for (const item of items) {
+    promoText += `• ${item.label} × ${item.qty} = ${item.price * item.qty} грн\n`;
+  }
+  promoText += `\n💰 *Повна ціна: ${total} грн* (${count} банок)\n\n`;
+  promoText += `━━━━━━━━━━━━━━━\n`;
+  promoText += `📊 *Розрахунок по акціях:*\n\n`;
+
+  if (count >= 2) {
+    const p = calcPromo(1, 0.05);
+    const saved = total - p;
+    promoText += `🔹 *1+1=3* (3-тя безкоштовна -5%)\n💳 ${p} грн | Економія: ${saved} грн\n\n`;
+  }
+
+  if (count >= 3) {
+    const p = calcPromo(1);
+    const saved = total - p;
+    promoText += `🔹 *3=4* (4-та безкоштовна + безкоштовна доставка)\n💳 ${p} грн | Економія: ${saved} грн\n\n`;
+  }
+
+  if (count >= 3) {
+    const p = calcPromo(2);
+    const saved = total - p;
+    promoText += `🔹 *3=5* (5-та і 6-та безкоштовні)\n💳 ${p} грн | Економія: ${saved} грн\n\n`;
+  }
+
+  if (count >= 4) {
+    const p = calcPromo(2);
+    const saved = total - p;
+    promoText += `🔹 *4=6* (5-та і 6-та безкоштовні + безкоштовна доставка) ⭐\n💳 ${p} грн | Економія: ${saved} грн\n\n`;
+  }
+
+  // Найвигідніша акція
+  promoText += `━━━━━━━━━━━━━━━\n`;
+  promoText += `✅ *Безкоштовні банки* (найдешевші):\n`;
+  promoText += sorted.slice(0, 2).map(j => `• ${j.label} — ${j.price} грн`).join("\n");
+
+  await deleteSession(telegramId);
+  await bot.sendMessage(chatId, promoText, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
+  return;
+}
 
     if (session?.mode === "calc") {
       const parts = text.trim().split(/\s+/);

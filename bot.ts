@@ -653,6 +653,7 @@ const MAIN_MENU_KEYBOARD = {
       [{ text: "🧠 Квіз" }, { text: "🎭 Рольова гра" }],
       [{ text: "📅 Виклик дня" }, { text: "🏆 Лідерборд" }],
       [{ text: "🗓 Тижень" }, { text: "📊 Моя статистика" }],
+      [{ text: "🧮 Калькулятор акцій" }, { text: "💰 Калькулятор цін" }],
       [{ text: "📜 Скрипти" }, { text: "ℹ️ Допомога" }],
     ],
     resize_keyboard: true,
@@ -1086,6 +1087,14 @@ bot.on("message", async (msg) => {
     { parse_mode: "Markdown" }
   );
   await upsertSession(telegramId, "calc_promo", {});
+  return;
+} 
+    if (text === "💰 Калькулятор цін") {
+  await bot.sendMessage(chatId,
+    `💰 *Калькулятор цін*\n\nНадішліть ціну і знижку у форматі:\n*ціна знижка*\n\nПриклад: \`459 10\` або \`539 7\``,
+    { parse_mode: "Markdown" }
+  );
+  await upsertSession(telegramId, "calc", {});
   return;
 }
 

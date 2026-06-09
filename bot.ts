@@ -875,7 +875,7 @@ bot.on("message", async (msg) => {
     // HELP
     if (text === "ℹ️ Допомога" || text === "/help") {
       const adminExtra = telegramId === ADMIN_ID
-        ? `\n\n👑 *Адмін-команди:*\n/ban ID — видалити з рейтингів\n/unban ID — повернути в рейтинги`
+        ? `\n\n👑 *Адмін-команди:*\n/users — список всіх з ID\n/ban ID — видалити з рейтингів\n/unban ID — повернути в рейтинги`
         : "";
       await bot.sendMessage(chatId, `ℹ️ *Як користуватися ботом*\n\n🧠 *Квіз* — відповідайте А, Б, В або Г\n🎭 *Рольові ігри* — /feedback для порад, /end для завершення\n📅 *Виклик дня* — одна відповідь на день\n🔔 /notifications — сповіщення вкл/викл\n⏰ /settime — час сповіщень${adminExtra}`, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
       return;
@@ -932,7 +932,9 @@ bot.on("message", async (msg) => {
             ? `${u.quiz_score}/${u.quiz_total} (${pct}%)`
             : "не проходив";
 
-          return `${medals[i] ?? `${i + 1}.`} ${level} *${name}*${activeMark} — ${quizPart}${roleplayMark}`;
+          const idPart = `\n    🆔 \`${u.telegram_id}\``;
+
+          return `${medals[i] ?? `${i + 1}.`} ${level} *${name}*${activeMark} — ${quizPart}${roleplayMark}${idPart}`;
         });
 
         // Розбиваємо на частини якщо забагато (Telegram ліміт ~4096 символів)
@@ -958,6 +960,45 @@ bot.on("message", async (msg) => {
         const pct = user.quiz_total > 0 ? Math.round((user.quiz_score / user.quiz_total) * 100) : 0;
         const level = pct >= 80 ? "🏆 Експерт" : pct >= 60 ? "📈 Середній" : pct >= 40 ? "📚 Навчається" : "🌱 Початківець";
         await bot.sendMessage(chatId, `📊 *Моя статистика: ${user.first_name ?? "Менеджер"}*\n\n🧠 Квіз: ${user.quiz_score}/${user.quiz_total} (${pct}%) — ${level}\n🎭 Рольових ігор: ${user.roleplay_count}`, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
+      }
+      return;
+    }
+
+    // USERS LIST (тільки адмін) — показує всіх з ID
+    if (telegramId === ADMIN_ID && (text === "/users" || text === "👥 Користувачі")) {
+      const allUsers = await pool.query(
+        `SELECT u.*, ar.status as access_status
+         FROM users u
+         LEFT JOIN access_requests ar ON u.telegram_id = ar.telegram_id
+         WHERE u.telegram_id != $1
+         ORDER BY u.last_active_at DESC NULLS LAST`,
+        [ADMIN_ID]
+      );
+      const rows = allUsers.rows;
+      if (rows.length === 0) { await sendMain(chatId, "👥 Список порожній."); return; }
+
+      const now = new Date();
+      const lines = rows.map((u: any, i: number) => {
+        const name = u.first_name ?? u.username ?? "Без імені";
+        const status = u.access_status === "banned" ? " 🚫" : u.access_status === "rejected" ? " ❌" : "";
+        const lastActive = u.last_active_at ? new Date(u.last_active_at) : null;
+        const diffH = lastActive ? Math.round((now.getTime() - lastActive.getTime()) / 3600000) : 9999;
+        const activeMark = diffH < 24 ? "🟢" : diffH < 72 ? "🟡" : "🔴";
+        const quizInfo = u.quiz_total > 0
+          ? `квіз ${u.quiz_score}/${u.quiz_total} | рольових ${u.roleplay_count}`
+          : "ще не проходив";
+        return `${i + 1}. ${activeMark} *${name}*${status}\n    🆔 \`${u.telegram_id}\`\n    📊 ${quizInfo}`;
+      });
+
+      const header = `👥 *Всі користувачі (${rows.length})*\n_🟢 <24г | 🟡 <3дні | 🔴 >3дні | 🚫 banned_\n\n`;
+
+      if ((header + lines.join("\n\n")).length <= 4000) {
+        await bot.sendMessage(chatId, header + lines.join("\n\n"), { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
+      } else {
+        await bot.sendMessage(chatId, header + lines.slice(0, 12).join("\n\n"), { parse_mode: "Markdown" });
+        if (lines.length > 12) {
+          await bot.sendMessage(chatId, lines.slice(12).join("\n\n"), { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
+        }
       }
       return;
     }

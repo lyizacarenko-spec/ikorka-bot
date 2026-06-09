@@ -9,8 +9,6 @@ const { Pool } = pkg;
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const GROQ_API_KEY = process.env.GROQ_API_KEY!;
 const DATABASE_URL = process.env.DATABASE_URL!;
-// Фото зберігається в корені репо як welcome.png
-// Якщо файл є локально — використовуємо його, інакше fallback на старий URL
 import fs from "fs";
 const WELCOME_PHOTO_PATH = "./welcome.png";
 const WELCOME_PHOTO_FALLBACK = "https://i.postimg.cc/K8cGfryZ/2024-02-10-0342.jpg";
@@ -33,6 +31,7 @@ async function initDB() {
       roleplay_count INT DEFAULT 0,
       notifications_enabled BOOLEAN DEFAULT true,
       notify_hour_utc INT DEFAULT 6,
+      last_active_at TIMESTAMPTZ DEFAULT NOW(),
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -80,14 +79,18 @@ async function initDB() {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ DEFAULT NOW();
   `);
   console.log("✅ DB initialized");
 }
 
 async function getOrCreateUser(telegramId: string, firstName?: string, username?: string) {
   const res = await pool.query(
-    `INSERT INTO users (telegram_id, first_name, username) VALUES ($1, $2, $3)
-     ON CONFLICT (telegram_id) DO UPDATE SET first_name = COALESCE($2, users.first_name), username = COALESCE($3, users.username)
+    `INSERT INTO users (telegram_id, first_name, username, last_active_at) VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (telegram_id) DO UPDATE SET
+       first_name = COALESCE($2, users.first_name),
+       username = COALESCE($3, users.username),
+       last_active_at = NOW()
      RETURNING *`,
     [telegramId, firstName ?? null, username ?? null]
   );
@@ -97,6 +100,10 @@ async function getOrCreateUser(telegramId: string, firstName?: string, username?
 async function getUser(telegramId: string) {
   const res = await pool.query("SELECT * FROM users WHERE telegram_id = $1", [telegramId]);
   return res.rows[0] ?? null;
+}
+
+async function updateLastActive(telegramId: string) {
+  await pool.query("UPDATE users SET last_active_at = NOW() WHERE telegram_id = $1", [telegramId]);
 }
 
 async function incrementQuizScore(telegramId: string, correct: boolean) {
@@ -249,6 +256,18 @@ async function getUsersForNotification(hourUtc: number) {
   return res.rows;
 }
 
+// Отримати користувачів які не були активні більше 24 годин (для нагадувань)
+async function getInactiveUsers(hoursInactive = 24) {
+  const res = await pool.query(
+    `SELECT telegram_id, first_name, quiz_total, roleplay_count
+     FROM users
+     WHERE notifications_enabled = true
+       AND last_active_at < NOW() - INTERVAL '${hoursInactive} hours'
+       AND created_at < NOW() - INTERVAL '1 hour'`,
+  );
+  return res.rows;
+}
+
 // ─── ACCESS CONTROL ───────────────────────────────────────────────────────────
 const ADMIN_ID = "620838766";
 
@@ -277,7 +296,6 @@ async function setAccessStatus(telegramId: string, status: string) {
 }
 
 // ─── RATE LIMITER ─────────────────────────────────────────────────────────────
-// Черга запитів до Groq щоб не перевантажувати API
 class RequestQueue {
   private queue: Array<() => Promise<any>> = [];
   private running = 0;
@@ -338,7 +356,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3, delayMs = 200
 
 // ─── GROQ ─────────────────────────────────────────────────────────────────────
 const groq = new Groq({ apiKey: GROQ_API_KEY });
-// Прибирає символи не-кириличних алфавітів
+
 function sanitizeUkrainian(text: string): string {
   return text
     .replace(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g, "")
@@ -346,6 +364,7 @@ function sanitizeUkrainian(text: string): string {
     .replace(/\s{2,}/g, " ")
     .trim();
 }
+
 async function geminiChat(systemPrompt: string, userMessage: string, maxTokens = 1024): Promise<string> {
   const response = await groq.chat.completions.create({
     model: "llama-3.3-70b-versatile",
@@ -372,12 +391,15 @@ async function geminiChatWithHistory(systemPrompt: string, history: Array<{role:
   return response.choices[0]?.message?.content ?? "";
 }
 
+// ─── KNOWLEDGE BASE ───────────────────────────────────────────────────────────
 const IKORKA_KNOWLEDGE = `
-Ти — експерт з продуктів магазину Ikorka Shop (магазин ікри). Всі відповіді тільки українською мовою.
+Ти — експерт з продуктів магазину Ikorka Shop. Всі відповіді тільки українською мовою.
 
 АСОРТИМЕНТ ТА ЦІНИ (грн) — ТОЧНІ ДАНІ:
-СКЛО:
+
+═══ ІКРА — СКЛО ═══
 - Щука скло 500г: 429 грн
+- Щука Преміум скло 500г: 489 грн
 - Горбуша скло 440г: 449 грн
 - Горбуша Преміум скло 500г: 569 грн
 - Форель скло 440г: 459 грн
@@ -389,7 +411,7 @@ const IKORKA_KNOWLEDGE = `
 - Осетер скло 440г: 549 грн
 - Осетер Преміум скло 500г: 629 грн
 
-ПЛАСТИК (всі 500г):
+═══ ІКРА — ПЛАСТИК (всі 500г) ═══
 - Щука пластик 500г: 379 грн
 - Горбуша пластик 500г: 399 грн
 - Горбуша Преміум пластик 500г: 549 грн
@@ -401,12 +423,28 @@ const IKORKA_KNOWLEDGE = `
 - Осетер пластик 500г: 529 грн
 - Осетер Преміум пластик 500г: 589 грн
 
-ВАЖЛИВО: Горбуша в СКЛІ — 440г, в ПЛАСТИКУ — 500г. Форель в СКЛІ — 440г, в ПЛАСТИКУ — 500г. Осетер в СКЛІ — 440г, в ПЛАСТИКУ — 500г.
+ВАЖЛИВО: Щука Преміум — тільки скло 500г (пластик відсутній).
+Горбуша в СКЛІ — 440г, в ПЛАСТИКУ — 500г. Форель в СКЛІ — 440г, в ПЛАСТИКУ — 500г. Осетер в СКЛІ — 440г, в ПЛАСТИКУ — 500г.
+
+═══ РИБА (слабосолена) ═══
+- Риба 300г: 369 грн (зі знижкою кожна 2-га: 339 грн)
+- Риба 500г: 499 грн (зі знижкою кожна 2-га: 449 грн)
+АКЦІЯ НА РИБУ: кожна друга упаковка зі знижкою (300г: 339 грн, 500г: 449 грн)
+
+═══ КРЕМ-СИР PHILADELPHIA ═══
+⚠️ ПРОДАЄТЬСЯ ТІЛЬКИ як доповнення до ікри або риби. Окремо НЕ відправляємо!
+- Philadelphia Balance 195г: 115 грн
+  (знижений вміст жиру -30%, ніжний вершковий смак, ідеально до ікри та риби)
+- Philadelphia з зеленню 195г: 115 грн
+  (з ароматними травами, ресторанний смак, до риби, ікри, овочів)
+- Philadelphia з зеленою цибулею 175г: 125 грн
+  (пікантний смак, до слабосоленої риби, бутербродів)
 
 РОЗМІР ЗЕРНА (від меншого до більшого):
 - Веслонос: 1.5-2 мм (найменше)
 - Осетер: 2.5-3 мм (чорна ікра!)
 - Щука: 2-3.5 мм
+- Щука Преміум: 3-4 мм (більше зерно ніж звичайна щука)
 - Форель: 4-4.5 мм
 - Горбуша: 4-5 мм
 - Лосось: 5-6 мм
@@ -414,12 +452,13 @@ const IKORKA_KNOWLEDGE = `
 - Кета: 5-7 мм
 
 ✨ ПРЕМІУМ ЛІНІЙКА:
+- Щука Преміум: 3-4 мм (тільки скло)
 - Горбуша Преміум: 5-6 мм
 - Осетер Преміум: 3-3.5 мм
 - Кета Преміум: 6-8 мм (НАЙБІЛЬШЕ зерно!)
 
-АКЦІЇ:
-- 1+1=3: купуєш 2 банки — 3-тя безкоштовно (ціна -5%)
+АКЦІЇ НА ІКРУ:
+- 1+1=3: купуєш 2 банки — 3-тя безкоштовно (без знижки на інші банки)
 - 3=4 + безкоштовна доставка: купуєш 3 — 4-та безкоштовно
 - 4=6 + безкоштовна доставка: купуєш 4 — отримуєш 6 (НАЙВИГІДНІША!)
 - 3=5: повна ціна, доставка за рахунок клієнта
@@ -427,20 +466,27 @@ const IKORKA_KNOWLEDGE = `
 
 РЕКОМЕНДАЦІЇ ДЛЯ ПОДАРУНКУ:
 - Для подарунку ЗАВЖДИ рекомендуй СКЛО — виглядає презентабельно
-- Найкращі варіанти для подарунку: Кета Преміум, Осетер Преміум, Лосось, Горбуша Преміум
+- Найкращі варіанти для подарунку: Кета Преміум, Осетер Преміум, Лосось, Горбуша Преміум, Щука Преміум
+- До подарунку з ікрою можна додати Philadelphia — виглядає як готовий делікатесний набір!
 - Акції для подарунку: 3=4 або 4=6 з безкоштовною доставкою — найвигідніше для кількох подарунків
-- НЕ рекомендуй 1+1=3 для подарунку — краще взяти більше банок з акцією 3=4 або 4=6
 
-ЗБЕРІГАННЯ: закрита — 3 місяці при 0-5°C; після відкриття — 14 діб у холодильнику.
+КОМБО-ПРОПОЗИЦІЇ (рекомендуй активно!):
+- Ікра + Philadelphia Balance: класичний делікатес
+- Ікра + Philadelphia з зеленню: ресторанна подача
+- Риба + Philadelphia: ідеальний сніданок
+- Риба + Ікра + Philadelphia: повний делікатесний набір
+
+ЗБЕРІГАННЯ: ікра закрита — 3 місяці при 0-5°C; після відкриття — 14 діб у холодильнику.
 КОМІСІЯ НП: 2% від суми + 20 грн — завжди попереджай клієнта!
-ФОТО ІКРИ: https://t.me/+KPwmfo_kSy83Yjhi
+ФОТО ПРОДУКТІВ: https://t.me/+KPwmfo_kSy83Yjhi
 `;
 
 const IKORKA_TOPICS = [
   "види ікри в асортименті Ikorka Shop",
   "ціни на ікру Ikorka Shop",
-  "акція 1+1=3",
-  "акція 3=5",
+  "Щука Преміум — характеристики та ціна",
+  "акція 1+1=3 на ікру",
+  "акція 3=5 на ікру",
   "скляна упаковка ікри",
   "пластикова упаковка ікри",
   "розмір зерна різних видів ікри",
@@ -448,9 +494,14 @@ const IKORKA_TOPICS = [
   "умови зберігання ікри",
   "робота із запереченнями при продажу ікри",
   "як запропонувати ікру як подарунок",
+  "крем-сир Philadelphia — види та ціни",
+  "крем-сир Philadelphia Balance — характеристики",
+  "комбо ікра + Philadelphia",
+  "слабосолена риба — ціни та акції",
+  "комбо риба + крем-сир",
+  "правила продажу Philadelphia (тільки з ікрою або рибою)",
 ];
 
-// FIX: додано maxRetries щоб уникнути нескінченної рекурсії
 async function generateQuizQuestion(previousTopics: string[] = [], previousQuestions: string[] = [], attempt = 0): Promise<any> {
   if (attempt >= 5) {
     throw new Error("Не вдалося згенерувати питання після 5 спроб");
@@ -477,6 +528,7 @@ async function generateQuizQuestion(previousTopics: string[] = [], previousQuest
 5. Весь текст ТІЛЬКИ українською мовою — жодних польських, англійських чи інших слів!
 6. ЗАБОРОНЕНО дублювати варіанти відповідей — всі 4 варіанти мають бути різними числами або текстами
 7. Використовуй точні дані з бази знань — не вигадуй ціни чи розміри зерна
+8. ВАЖЛИВО щодо акції 1+1=3: це означає купуєш 2 банки — 3-тя безкоштовно. БЕЗ обов'язкової знижки -5% на інші банки.
 
 JSON:
 {
@@ -491,22 +543,17 @@ JSON:
     withRetry(() => geminiChat(systemPrompt, "Створи питання для квізу.", 1024))
   );
 
-  // Витягуємо JSON різними способами
   let parsed: any;
   try {
-    // Спосіб 1: прибираємо markdown блоки
     let cleaned = content.replace(/```json\n?|\n?```/g, "").trim();
-    // Спосіб 2: шукаємо JSON об'єкт за допомогою регексу
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (jsonMatch) cleaned = jsonMatch[0];
     parsed = JSON.parse(cleaned);
   } catch {
-    // Якщо JSON не парситься — пробуємо ще раз з наступною спробою
     console.warn(`Quiz JSON parse failed (attempt ${attempt}), raw:`, content.slice(0, 200));
     return generateQuizQuestion(previousTopics, previousQuestions, attempt + 1);
   }
 
-  // Перевірка що об'єкт має потрібні поля
   if (!parsed?.question || !Array.isArray(parsed?.options) || parsed.options.length < 4 || parsed.correctIndex === undefined) {
     console.warn(`Quiz invalid structure (attempt ${attempt}):`, JSON.stringify(parsed).slice(0, 200));
     return generateQuizQuestion(previousTopics, previousQuestions, attempt + 1);
@@ -516,12 +563,12 @@ JSON:
     opt.replace(/\*\*/g, "").replace(/\*/g, "").replace(/__/g, "").replace(/_/g, "")
   );
 
-  // FIX: передаємо attempt + 1 замість нескінченної рекурсії
   const uniqueOptions = new Set(parsed.options.map((o: string) => o.replace(/^[А-Г]\) /, "").trim()));
   if (uniqueOptions.size < 4) {
     return generateQuizQuestion(previousTopics, previousQuestions, attempt + 1);
   }
-parsed.question = sanitizeUkrainian(parsed.question);
+
+  parsed.question = sanitizeUkrainian(parsed.question);
   parsed.explanation = sanitizeUkrainian(parsed.explanation);
   parsed.options = parsed.options.map((o: string) => sanitizeUkrainian(o));
   return parsed;
@@ -533,7 +580,7 @@ const SCENARIOS = [
     title: "Вибір подарунка",
     context: "Клієнт хоче купити ікру в подарунок на день народження.",
     customerPersona: `Ти граєш роль КЛІЄНТА на ім'я Наталія, 38 років. Ти хочеш купити ікру в подарунок колезі на ювілей, бюджет 1000-1500 грн. Ти НЕ розбираєшся в ікрі і не знаєш різниці між видами. Тебе лякають ціни, думаєш що краще купити цукерки. Говори тільки українською. ВАЖЛИВО: ти КЛІЄНТ — задаєш питання, сумніваєшся, не знаєш продукт. НЕ продавай ікру, НЕ давай поради як менеджер!`,
-    objective: "Допомогти клієнту обрати ікру в подарунок і запропонувати скляну упаковку + акцію 3=4 або 4=6",
+    objective: "Допомогти клієнту обрати ікру в подарунок, запропонувати скляну упаковку, акцію 3=4 або 4=6, і Philadelphia як доповнення до подарунку",
   },
   {
     title: "Заперечення по ціні",
@@ -545,19 +592,25 @@ const SCENARIOS = [
     title: "Корпоративне замовлення",
     context: "Представник компанії хоче закупити ікру для 20 співробітників.",
     customerPersona: `Ти граєш роль КЛІЄНТА на ім'я Андрій, офіс-менеджер. Тобі потрібно 20 подарунків, бюджет до 15000 грн. Ти торгуєшся і шукаєш знижку. Говори тільки українською. ВАЖЛИВО: ти КЛІЄНТ — торгуєшся, питаєш про знижки. НЕ продавай ікру!`,
-    objective: "Закрити на акцію та оформити велике замовлення",
+    objective: "Закрити на акцію та оформити велике замовлення, запропонувати додати Philadelphia до кожного подарункового набору",
   },
   {
     title: "Новачок, вперше купує ікру",
     context: "Молодий клієнт ніколи не купував ікру в спеціалізованому магазині.",
     customerPersona: `Ти граєш роль КЛІЄНТА на ім'я Кирило, 24 роки. Ти ніколи не їв ікру, все незнайоме. Ставиш наївні питання. Говори тільки українською. ВАЖЛИВО: ти КЛІЄНТ — не знаєш нічого про ікру, питаєш. НЕ продавай ікру!`,
-    objective: "Навчити клієнта та продати ікру як оптимальний старт",
+    objective: "Навчити клієнта та продати ікру як оптимальний старт, запропонувати Philadelphia або рибу для повноцінного сніданку",
   },
   {
     title: "Клієнт іде до конкурента",
     context: "Постійний клієнт знайшов дешевше в іншому місці.",
     customerPersona: `Ти граєш роль КЛІЄНТА на ім'я Олена, 50 років. Ти знайшла ікру дешевше на маркетплейсі на 15%. Ти ввічлива але тверда. Говори тільки українською. ВАЖЛИВО: ти КЛІЄНТ — хочеш піти, потрібен вагомий аргумент щоб залишитись. НЕ продавай ікру!`,
-    objective: "Утримати клієнта та запропонувати акцію",
+    objective: "Утримати клієнта та запропонувати акцію, додати цінність через нові продукти (Philadelphia, риба)",
+  },
+  {
+    title: "Продаж крем-сиру та риби",
+    context: "Клієнт вже замовив ікру і менеджер пропонує доповнення.",
+    customerPersona: `Ти граєш роль КЛІЄНТА на ім'я Марина, 35 років. Ти вже обрала ікру горбушу 2 банки. Не знаєш про Philadelphia і рибу в магазині. Говори тільки українською. ВАЖЛИВО: ти КЛІЄНТ — не знаєш про нові продукти, можеш зацікавитися якщо правильно запропонують. НЕ продавай ікру!`,
+    objective: "Допродати Philadelphia та/або рибу до замовлення ікри. Пояснити що Philadelphia продається тільки з ікрою/рибою.",
   },
 ];
 
@@ -613,7 +666,7 @@ const SCRIPTS: Record<string, string> = {
 "Отже, ви обрали [вид ікри], [упаковка], [кількість]. Правильно?"
 
 2️⃣ *Запропонуй доп. продаж*
-"До цього замовлення чудово підійде [вид] — інший смак, цікаво порівняти. Додаємо?"
+"До цього замовлення чудово підійде Philadelphia або слабосолена риба — готовий делікатесний набір! Додаємо?"
 
 3️⃣ *Уточни доставку*
 "Доставка Новою Поштою. При накладеному платежі комісія НП: 2% + 20 грн."
@@ -630,16 +683,51 @@ const SCRIPTS: Record<string, string> = {
 "Добрий день, [ім'я]! Це [ваше ім'я] з Ikorka Shop. Ви у нас купували [вид ікри] — сподобалось?"
 
 2️⃣ *Причина дзвінка*
-"Телефоную, бо з'явилась нова партія + акція 4=6 з безкоштовною доставкою — подумав(ла) про вас!"
+"Телефоную, бо з'явились новинки — крем-сир Philadelphia і слабосолена риба! Плюс акція 4=6 з безкоштовною доставкою 🎉"
 
 3️⃣ *Згадай попереднє замовлення*
-"Минулого разу брали горбушу — хочете знову чи спробуємо щось нове? Зараз дуже добра Кета Преміум!"
+"Минулого разу брали горбушу — хочете знову чи спробуємо щось нове? До ікри зараз дуже добре йде Philadelphia Balance!"
 
 4️⃣ *Запропонуй вигоду*
-"При замовленні від 4 банок — доставка безкоштовна. Виходить дуже вигідно!"
+"При замовленні від 4 банок ікри — доставка безкоштовна. А Philadelphia і рибу відправляємо тільки разом з ікрою!"
 
 5️⃣ *Закрий*
 "Оформлюємо? Доставка на завтра ще є — встигаємо!"`,
+
+  philadelphia: `🧀 *Скрипт: Продаж Philadelphia*
+
+⚠️ *ВАЖЛИВО: Philadelphia продається ТІЛЬКИ з ікрою або рибою!*
+
+1️⃣ *Запропонуй після вибору ікри/риби*
+"До вашого замовлення у нас є крем-сир Philadelphia — ідеально поєднується з ікрою!"
+
+2️⃣ *Презентуй вибір*
+"У нас 3 види:
+• Balance 195г — 115 грн (класичний, менше жиру)
+• З зеленню 195г — 115 грн (ароматний, ресторанний смак)
+• З зеленою цибулею 175г — 125 грн (пікантний)"
+
+3️⃣ *Поясни цінність*
+"Ікра + Philadelphia на хрусткому хлібці — це ресторанний делікатес вдома за копійки!"
+
+4️⃣ *Нагадай умову*
+"Беремо? Нагадую — Philadelphia тільки разом з ікрою або рибою, окремо не відправляємо."`,
+
+  ryba: `🐟 *Скрипт: Продаж риби*
+
+1️⃣ *Запропонуй до ікри*
+"До вашої ікри є чудове доповнення — слабосолена риба!"
+
+2️⃣ *Презентуй*
+"Маємо два формати:
+• 300г — 369 грн (кожна 2-га по 339 грн!)
+• 500г — 499 грн (кожна 2-га по 449 грн!)"
+
+3️⃣ *Комбо-пропозиція*
+"Риба + Philadelphia + ікра — повний делікатесний набір для сімейного сніданку або подарунку!"
+
+4️⃣ *Закрий*
+"Берете 2 упаковки риби — одразу отримуєте знижку на другу. Додаємо?"`,
 };
 
 function calcDiscount(price: number, pct: number): number {
@@ -689,7 +777,6 @@ async function sendMain(chatId: number | string, text: string) {
   await bot.sendMessage(chatId, text, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
 }
 
-// FIX: захист від паралельних запитів від одного користувача
 const processingUsers = new Set<string>();
 
 bot.on("message", async (msg) => {
@@ -698,7 +785,6 @@ bot.on("message", async (msg) => {
   const text = msg.text?.trim() ?? "";
   if (!text) return;
 
-  // FIX: якщо запит вже обробляється — ігноруємо новий
   if (processingUsers.has(telegramId)) {
     return;
   }
@@ -710,7 +796,6 @@ bot.on("message", async (msg) => {
       const accessStatus = await getAccessStatus(telegramId);
 
       if (accessStatus === null) {
-        // Перший раз — відправляємо запит адміну
         await upsertAccessRequest(telegramId, msg.from?.first_name ?? null, msg.from?.username ?? null);
         await bot.sendMessage(chatId,
           "🔒 *Доступ закрито*\n\nВаш запит на доступ відправлено адміністратору. Очікуйте підтвердження.",
@@ -742,8 +827,11 @@ bot.on("message", async (msg) => {
         await bot.sendMessage(chatId, "🚫 Ваш запит відхилено. Зверніться до адміністратора.");
         return;
       }
-      // accessStatus === "approved" → пропускаємо далі
     }
+
+    // Оновлюємо час активності
+    await updateLastActive(telegramId);
+
     const user = await getOrCreateUser(telegramId, msg.from?.first_name, msg.from?.username);
     const session = await getActiveSession(telegramId);
     const state = session?.state ?? null;
@@ -765,7 +853,6 @@ bot.on("message", async (msg) => {
     // STATS
     if (text === "📊 Моя статистика" || text === "/stats") {
       if (telegramId === ADMIN_ID) {
-        // Адмін бачить загальну статистику команди + список всіх
         const allUsers = await pool.query(
           "SELECT * FROM users WHERE quiz_total > 0 ORDER BY quiz_score DESC, quiz_total DESC"
         );
@@ -787,7 +874,6 @@ bot.on("message", async (msg) => {
         const summary = `📊 *Статистика команди*\n\n👥 Учасників: ${totalUsers}\n📝 Всього питань: ${totalQuestions}\n📈 Середній результат: ${avgPct}%\n\n${userLines.join("\n")}`;
         await bot.sendMessage(chatId, summary, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
       } else {
-        // Звичайний користувач бачить тільки свою статистику
         const pct = user.quiz_total > 0 ? Math.round((user.quiz_score / user.quiz_total) * 100) : 0;
         const level = pct >= 80 ? "🏆 Експерт" : pct >= 60 ? "📈 Середній" : pct >= 40 ? "📚 Навчається" : "🌱 Початківець";
         await bot.sendMessage(chatId, `📊 *Моя статистика: ${user.first_name ?? "Менеджер"}*\n\n🧠 Квіз: ${user.quiz_score}/${user.quiz_total} (${pct}%) — ${level}\n🎭 Рольових ігор: ${user.roleplay_count}`, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
@@ -1058,6 +1144,7 @@ bot.on("message", async (msg) => {
           keyboard: [
             [{ text: "💰 Скрипт: Дорого" }, { text: "📦 Скрипт: Закриття" }],
             [{ text: "🤝 Скрипт: Теплий дзвінок" }],
+            [{ text: "🧀 Скрипт: Philadelphia" }, { text: "🐟 Скрипт: Риба" }],
             [{ text: "🧮 Калькулятор знижок" }, { text: "🏠 Головне меню" }],
           ],
           resize_keyboard: true,
@@ -1081,127 +1168,138 @@ bot.on("message", async (msg) => {
       return;
     }
 
-    if (text === "🧮 Калькулятор акцій" || text === "🧮 Калькулятор знижок") {
-  await bot.sendMessage(chatId,
-    `🧮 *Калькулятор акцій*\n\nНадішліть список банок у форматі:\n*назва кількість*\n\nПриклад:\n\`горбуша 2\nкета 2\nосетер преміум 2\`\n\nЯ порахую по акціях:\n• 1+1=3 (3-тя безкоштовна, -5%)\n• 3=4 (4-та безкоштовна)\n• 3=5 (5-та і 6-та безкоштовні, без безкоштовної доставки)\n• 4=6 (5-та і 6-та безкоштовні + безкоштовна доставка)`,
-    { parse_mode: "Markdown" }
-  );
-  await upsertSession(telegramId, "calc_promo", {});
-  return;
-} 
-    if (text === "💰 Калькулятор цін") {
-  await bot.sendMessage(chatId,
-    `💰 *Калькулятор цін*\n\nНадішліть ціну і знижку у форматі:\n*ціна знижка*\n\nПриклад: \`459 10\` або \`539 7\``,
-    { parse_mode: "Markdown" }
-  );
-  await upsertSession(telegramId, "calc", {});
-  return;
-}
-
-if (session?.mode === "calc_promo") {
-  const PRICES: Record<string, { price: number; label: string }> = {
-    "щука": { price: 429, label: "Щука скло 500г" },
-    "горбуша": { price: 449, label: "Горбуша скло 440г" },
-    "горбуша преміум": { price: 569, label: "Горбуша Преміум скло 500г" },
-    "форель": { price: 459, label: "Форель скло 440г" },
-    "лосось": { price: 509, label: "Лосось скло 500г" },
-    "кижуч": { price: 509, label: "Кижуч скло 500г" },
-    "кета": { price: 539, label: "Кета скло 500г" },
-    "кета преміум": { price: 609, label: "Кета Преміум скло 500г" },
-    "веслонос": { price: 559, label: "Веслонос скло 500г" },
-    "осетер": { price: 549, label: "Осетер скло 440г" },
-    "осетер преміум": { price: 629, label: "Осетер Преміум скло 500г" },
-    "чорна": { price: 629, label: "Осетер Преміум скло 500г" },
-    "чорна осетрова": { price: 629, label: "Осетер Преміум скло 500г" },
-  };
-
-  // Парсимо введення
-  const lines = text.trim().split("\n");
-  const items: Array<{ label: string; price: number; qty: number }> = [];
-  let parseError = false;
-
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    const match = line.trim().match(/^(.+?)\s+(\d+)$/);
-    if (!match) { parseError = true; break; }
-    const name = match[1].toLowerCase().trim();
-    const qty = parseInt(match[2]);
-    const found = PRICES[name];
-    if (!found) { parseError = true; break; }
-    items.push({ label: found.label, price: found.price, qty });
-  }
-
-  if (parseError || items.length === 0) {
-    await bot.sendMessage(chatId,
-      `⚠️ Не розпізнав. Надішліть у форматі:\n\`горбуша 2\nкета 1\nосетер преміум 2\``,
-      { parse_mode: "Markdown" }
-    );
-    return;
-  }
-
-  // Розгортаємо в масив банок (кожна банка окремо)
-  const allJars: Array<{ label: string; price: number }> = [];
-  for (const item of items) {
-    for (let i = 0; i < item.qty; i++) {
-      allJars.push({ label: item.label, price: item.price });
+    if (text === "🧀 Скрипт: Philadelphia") {
+      await bot.sendMessage(chatId, SCRIPTS.philadelphia, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
+      return;
     }
-  }
 
-  // Сортуємо за ціною (для визначення безкоштовних — найдешевші)
-  const sorted = [...allJars].sort((a, b) => a.price - b.price);
-  const total = allJars.reduce((s, j) => s + j.price, 0);
-  const count = allJars.length;
+    if (text === "🐟 Скрипт: Риба") {
+      await bot.sendMessage(chatId, SCRIPTS.ryba, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
+      return;
+    }
 
-  // Розрахунок по акціях
-  function calcPromo(freeCount: number, extraDiscount = 0) {
-    const free = sorted.slice(0, freeCount);
-    const freeSum = free.reduce((s, j) => s + j.price, 0);
-    const paid = total - freeSum;
-    const discount = Math.round(paid * extraDiscount);
-    return Math.round(paid - discount);
-  }
+    // PROMO CALCULATOR
+    if (text === "🧮 Калькулятор акцій" || text === "🧮 Калькулятор знижок") {
+      await bot.sendMessage(chatId,
+        `🧮 *Калькулятор акцій*\n\nНадішліть список банок у форматі:\n*назва кількість*\n\nПриклад:\n\`горбуша 2\nкета 2\nщука преміум 2\`\n\nДоступні позиції: щука, щука преміум, горбуша, горбуша преміум, форель, лосось, кижуч, кета, кета преміум, веслонос, осетер, осетер преміум`,
+        { parse_mode: "Markdown" }
+      );
+      await upsertSession(telegramId, "calc_promo", {});
+      return;
+    }
 
-  let promoText = `📋 *Замовлення:*\n`;
-  for (const item of items) {
-    promoText += `• ${item.label} × ${item.qty} = ${item.price * item.qty} грн\n`;
-  }
-  promoText += `\n💰 *Повна ціна: ${total} грн* (${count} банок)\n\n`;
-  promoText += `━━━━━━━━━━━━━━━\n`;
-  promoText += `📊 *Розрахунок по акціях:*\n\n`;
+    if (text === "💰 Калькулятор цін") {
+      await bot.sendMessage(chatId,
+        `💰 *Калькулятор цін*\n\nНадішліть ціну і знижку у форматі:\n*ціна знижка*\n\nПриклад: \`459 10\` або \`539 7\``,
+        { parse_mode: "Markdown" }
+      );
+      await upsertSession(telegramId, "calc", {});
+      return;
+    }
 
-  if (count >= 2) {
-    const p = calcPromo(1, 0.05);
-    const saved = total - p;
-    promoText += `🔹 *1+1=3* (3-тя безкоштовна -5%)\n💳 ${p} грн | Економія: ${saved} грн\n\n`;
-  }
+    if (session?.mode === "calc_promo") {
+      const PRICES: Record<string, { price: number; label: string }> = {
+        "щука": { price: 429, label: "Щука скло 500г" },
+        "щука преміум": { price: 489, label: "Щука Преміум скло 500г" },
+        "горбуша": { price: 449, label: "Горбуша скло 440г" },
+        "горбуша преміум": { price: 569, label: "Горбуша Преміум скло 500г" },
+        "форель": { price: 459, label: "Форель скло 440г" },
+        "лосось": { price: 509, label: "Лосось скло 500г" },
+        "кижуч": { price: 509, label: "Кижуч скло 500г" },
+        "кета": { price: 539, label: "Кета скло 500г" },
+        "кета преміум": { price: 609, label: "Кета Преміум скло 500г" },
+        "веслонос": { price: 559, label: "Веслонос скло 500г" },
+        "осетер": { price: 549, label: "Осетер скло 440г" },
+        "осетер преміум": { price: 629, label: "Осетер Преміум скло 500г" },
+        "чорна": { price: 629, label: "Осетер Преміум скло 500г" },
+        "чорна осетрова": { price: 629, label: "Осетер Преміум скло 500г" },
+      };
 
-  if (count >= 3) {
-    const p = calcPromo(1);
-    const saved = total - p;
-    promoText += `🔹 *3=4* (4-та безкоштовна + безкоштовна доставка)\n💳 ${p} грн | Економія: ${saved} грн\n\n`;
-  }
+      const lines = text.trim().split("\n");
+      const items: Array<{ label: string; price: number; qty: number }> = [];
+      let parseError = false;
 
-  if (count >= 3) {
-    const p = calcPromo(2);
-    const saved = total - p;
-    promoText += `🔹 *3=5* (5-та і 6-та безкоштовні)\n💳 ${p} грн | Економія: ${saved} грн\n\n`;
-  }
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const match = line.trim().match(/^(.+?)\s+(\d+)$/);
+        if (!match) { parseError = true; break; }
+        const name = match[1].toLowerCase().trim();
+        const qty = parseInt(match[2]);
+        const found = PRICES[name];
+        if (!found) { parseError = true; break; }
+        items.push({ label: found.label, price: found.price, qty });
+      }
 
-  if (count >= 4) {
-    const p = calcPromo(2);
-    const saved = total - p;
-    promoText += `🔹 *4=6* (5-та і 6-та безкоштовні + безкоштовна доставка) ⭐\n💳 ${p} грн | Економія: ${saved} грн\n\n`;
-  }
+      if (parseError || items.length === 0) {
+        await bot.sendMessage(chatId,
+          `⚠️ Не розпізнав. Надішліть у форматі:\n\`горбуша 2\nкета 1\nщука преміум 2\``,
+          { parse_mode: "Markdown" }
+        );
+        return;
+      }
 
-  // Найвигідніша акція
-  promoText += `━━━━━━━━━━━━━━━\n`;
-  promoText += `✅ *Безкоштовні банки* (найдешевші):\n`;
-  promoText += sorted.slice(0, 2).map(j => `• ${j.label} — ${j.price} грн`).join("\n");
+      const allJars: Array<{ label: string; price: number }> = [];
+      for (const item of items) {
+        for (let i = 0; i < item.qty; i++) {
+          allJars.push({ label: item.label, price: item.price });
+        }
+      }
 
-  await deleteSession(telegramId);
-  await bot.sendMessage(chatId, promoText, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
-  return;
-}
+      const sorted = [...allJars].sort((a, b) => a.price - b.price);
+      const total = allJars.reduce((s, j) => s + j.price, 0);
+      const count = allJars.length;
+
+      // Акція 1+1=3: купуєш 2 — 3-тя безкоштовно (найдешевша)
+      function calc113() {
+        if (count < 3) return null;
+        // Безкоштовна — найдешевша банка
+        const freeJar = sorted[0];
+        return { price: total - freeJar.price, saved: freeJar.price };
+      }
+
+      function calcPromo(freeCount: number) {
+        if (count < freeCount + 1) return null;
+        const free = sorted.slice(0, freeCount);
+        const freeSum = free.reduce((s, j) => s + j.price, 0);
+        return { price: total - freeSum, saved: freeSum };
+      }
+
+      let promoText = `📋 *Замовлення:*\n`;
+      for (const item of items) {
+        promoText += `• ${item.label} × ${item.qty} = ${item.price * item.qty} грн\n`;
+      }
+      promoText += `\n💰 *Повна ціна: ${total} грн* (${count} банок)\n\n`;
+      promoText += `━━━━━━━━━━━━━━━\n`;
+      promoText += `📊 *Розрахунок по акціях:*\n\n`;
+
+      if (count >= 3) {
+        const p = calc113();
+        if (p) promoText += `🔹 *1+1=3* (3-тя безкоштовно)\n💳 ${p.price} грн | Економія: ${p.saved} грн\n\n`;
+      }
+
+      if (count >= 4) {
+        const p = calcPromo(1);
+        if (p) promoText += `🔹 *3=4* (4-та безкоштовна + безкоштовна доставка)\n💳 ${p.price} грн | Економія: ${p.saved} грн\n\n`;
+      }
+
+      if (count >= 5) {
+        const p = calcPromo(2);
+        if (p) promoText += `🔹 *3=5* (5-та і 6-та безкоштовні)\n💳 ${p.price} грн | Економія: ${p.saved} грн\n\n`;
+      }
+
+      if (count >= 6) {
+        const p = calcPromo(2);
+        if (p) promoText += `🔹 *4=6* (5-та і 6-та безкоштовні + безкоштовна доставка) ⭐\n💳 ${p.price} грн | Економія: ${p.saved} грн\n\n`;
+      }
+
+      promoText += `━━━━━━━━━━━━━━━\n`;
+      promoText += `✅ *Безкоштовні банки* (найдешевші):\n`;
+      promoText += sorted.slice(0, 2).map(j => `• ${j.label} — ${j.price} грн`).join("\n");
+
+      await deleteSession(telegramId);
+      await bot.sendMessage(chatId, promoText, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
+      return;
+    }
 
     if (session?.mode === "calc") {
       const parts = text.trim().split(/\s+/);
@@ -1226,7 +1324,7 @@ if (session?.mode === "calc_promo") {
     await bot.sendChatAction(chatId as number, "typing");
     const aiText = await groqQueue.add(() =>
       withRetry(() => geminiChat(
-        `Ти — асистент менеджера магазину Ikorka Shop. Відповідай коротко і по суті ТІЛЬКИ українською мовою.\n\n${IKORKA_KNOWLEDGE}\n\nЯкщо питають про фото ікри — давай посилання: https://t.me/+KPwmfo_kSy83Yjhi`,
+        `Ти — асистент менеджера магазину Ikorka Shop. Відповідай коротко і по суті ТІЛЬКИ українською мовою.\n\n${IKORKA_KNOWLEDGE}\n\nЯкщо питають про фото продуктів — давай посилання: https://t.me/+KPwmfo_kSy83Yjhi`,
         text,
         800
       ))
@@ -1235,14 +1333,12 @@ if (session?.mode === "calc_promo") {
 
   } catch (err: any) {
     console.error("Bot error:", err);
-    // FIX: більш інформативне повідомлення про помилку
     const isRateLimit = err?.status === 429 || err?.message?.includes("rate limit");
     const errMsg = isRateLimit
       ? "⏳ Забагато запитів. Зачекайте хвилину і спробуйте ще раз."
       : "⚠️ Щось пішло не так. Напишіть /start для скидання.";
     await bot.sendMessage(chatId, errMsg).catch(() => {});
   } finally {
-    // FIX: завжди знімаємо блокування користувача
     processingUsers.delete(telegramId);
   }
 });
@@ -1266,6 +1362,8 @@ async function sendNextQuizQuestion(chatId: number | string, telegramId: string,
 }
 
 // ─── SCHEDULER ────────────────────────────────────────────────────────────────
+
+// Щогодинна перевірка — відправляє виклик дня
 cron.schedule("0 * * * *", async () => {
   const hourUtc = new Date().getUTCHours();
   const users = await getUsersForNotification(hourUtc);
@@ -1285,6 +1383,48 @@ cron.schedule("0 * * * *", async () => {
   }
 });
 
+// ─── НАГАДУВАННЯ ДЛЯ НЕАКТИВНИХ КОРИСТУВАЧІВ ─────────────────────────────────
+// Перевірка о 10:00 UTC (13:00 Київ) щодня
+cron.schedule("0 10 * * *", async () => {
+  console.log("🔔 Checking inactive users...");
+  try {
+    const inactiveUsers = await getInactiveUsers(24);
+    for (const user of inactiveUsers) {
+      const firstName = user.first_name ? `, ${user.first_name}` : "";
+      const hasNoRoleplay = user.roleplay_count === 0;
+      const hasNoQuiz = user.quiz_total === 0;
+
+      let message = "";
+
+      if (hasNoRoleplay && hasNoQuiz) {
+        // Ніколи не практикувався
+        message = `👋 Привіт${firstName}!\n\nДавно не бачились! 😊\n\n🎭 *Рольова гра* — найефективніший спосіб підготуватись до реальних продажів. Зіграй з клієнтом прямо зараз!\n\n🧠 *Квіз* — перевір знання асортименту за 5 хвилин.\n\nЗаходь — є новинки в асортименті: *Щука Преміум, Philadelphia, слабосолена риба!* 🐟🧀`;
+      } else if (hasNoRoleplay) {
+        // Є квіз але немає рольової
+        message = `🎭 Привіт${firstName}!\n\nТи вже знаєш теорію — тепер час практики!\n\n*Рольова гра* допомагає відпрацювати реальні ситуації з клієнтами: заперечення, вибір подарунка, корпоративні замовлення.\n\nСпробуй прямо зараз — це займе лише 5-10 хвилин! 💪`;
+      } else if (user.roleplay_count < 3) {
+        // Мало рольових ігор
+        message = `💪 Привіт${firstName}!\n\nТи вже пройшов${user.roleplay_count === 1 ? "" : "ла"} ${user.roleplay_count} рольову гру — чудово!\n\nЩоб закріпити навички продажів, рекомендується проходити хоча б раз на день.\n\n🎭 Є новий сценарій: *"Продаж крем-сиру та риби"* — відпрацюй допродаж Philadelphia і слабосоленої риби!`;
+      } else {
+        // Регулярно практикується, але давно не заходив
+        message = `📚 Привіт${firstName}!\n\nДавно тебе не було! В асортименті з'явились новинки:\n\n🆕 *Щука Преміум* скло 500г — 489 грн\n🧀 *Philadelphia* (Balance, з зеленню, з зеленою цибулею)\n🐟 *Слабосолена риба* 300г і 500г\n\nОнови знання в квізі або відпрацюй продаж новинок у рольовій грі! 🎯`;
+      }
+
+      if (message) {
+        await bot.sendMessage(user.telegram_id, message, {
+          parse_mode: "Markdown",
+          ...MAIN_MENU_KEYBOARD
+        }).catch(() => {});
+        // Невелика затримка між повідомленнями
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
+    console.log(`✅ Sent reminders to ${inactiveUsers.length} inactive users`);
+  } catch (err) {
+    console.error("Reminder error:", err);
+  }
+});
+
 // ─── START ────────────────────────────────────────────────────────────────────
 initDB().then(async () => {
   await bot.deleteWebHook();
@@ -1295,7 +1435,7 @@ initDB().then(async () => {
 });
 
 // ─── AUDIO ANALYSIS ───────────────────────────────────────────────────────────
-const ANALYSIS_PROMPT = `Ти — експерт з аналізу дзвінків менеджерів з продажу ікри в магазині Ikorka Shop.\n\nПроаналізуй транскрипцію дзвінку і дай структурований розбір.\n\nЧЕК-ЛИСТ IKORKA SHOP:\n- Привітання та встановлення контакту\n- Виявлення потреби (відкриті питання)\n- Презентація продукту (вид ікри, упаковка, смак)\n- Озвучення акцій (1+1=3, 3=4, 4=6)\n- Допродаж (Преміум версія, додаткові позиції)\n- Робота із запереченнями (ціна, якість)\n- Озвучення комісії НП (2%+20 грн)\n- Закриття на замовлення\n- Злив на перезвон (негативний фактор)\n\nВідповідай СТРОГО в такому форматі:\n\n✅ *Сильні сторони:*\n[перелік що зроблено добре]\n\n❌ *Помилки:*\n[перелік помилок]\n\n📊 *Оцінка:*\n• Контакт: X/10\n• Виявлення потреби: X/10\n• Презентація: X/10\n• Робота з запереченнями: X/10\n• Закриття: X/10\n• Допродаж: X/10\n\n🏆 *Загальна оцінка: X/10*\n\n💡 *Головна порада:*\n[одна конкретна порада для покращення]`;
+const ANALYSIS_PROMPT = `Ти — експерт з аналізу дзвінків менеджерів з продажу ікри в магазині Ikorka Shop.\n\nПроаналізуй транскрипцію дзвінку і дай структурований розбір.\n\nЧЕК-ЛИСТ IKORKA SHOP:\n- Привітання та встановлення контакту\n- Виявлення потреби (відкриті питання)\n- Презентація продукту (вид ікри, упаковка, смак)\n- Озвучення акцій (1+1=3, 3=4, 4=6)\n- Допродаж Philadelphia або риби\n- Допродаж (Преміум версія, додаткові позиції)\n- Робота із запереченнями (ціна, якість)\n- Озвучення комісії НП (2%+20 грн)\n- Закриття на замовлення\n- Злив на перезвон (негативний фактор)\n\nВідповідай СТРОГО в такому форматі:\n\n✅ *Сильні сторони:*\n[перелік що зроблено добре]\n\n❌ *Помилки:*\n[перелік помилок]\n\n📊 *Оцінка:*\n• Контакт: X/10\n• Виявлення потреби: X/10\n• Презентація: X/10\n• Робота з запереченнями: X/10\n• Закриття: X/10\n• Допродаж: X/10\n\n🏆 *Загальна оцінка: X/10*\n\n💡 *Головна порада:*\n[одна конкретна порада для покращення]`;
 
 async function analyzeCall(chatId: number | string, transcript: string) {
   const analysisText = await groqQueue.add(() =>
@@ -1305,8 +1445,6 @@ async function analyzeCall(chatId: number | string, transcript: string) {
 }
 
 async function transcribeAudio(fileId: string, mimeType: string): Promise<string> {
-  // Транскрипція аудіо — залишаємо Groq Whisper бо Gemini не підтримує аудіо файли напряму
-  // Якщо GROQ_API_KEY не заданий — повертаємо помилку
   const groqKey = process.env.GROQ_API_KEY;
   if (!groqKey) throw new Error("GROQ_API_KEY не заданий — транскрипція недоступна");
   const fileInfo = await bot.getFile(fileId);
@@ -1320,7 +1458,7 @@ async function transcribeAudio(fileId: string, mimeType: string): Promise<string
   formData.append("model", "whisper-large-v3");
   formData.append("language", "uk");
   formData.append("response_format", "text");
-  formData.append("prompt", "Магазин ікри Ikorka Shop. Горбуша, Лосось, Кета, Форель, Кижуч, Веслонос, Осетер, Щука. Менеджер з продажу. Нова Пошта.");
+  formData.append("prompt", "Магазин ікри Ikorka Shop. Горбуша, Лосось, Кета, Форель, Кижуч, Веслонос, Осетер, Щука, Щука Преміум, Philadelphia. Менеджер з продажу. Нова Пошта.");
   const transcribeRes = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
     method: "POST",
     headers: { "Authorization": `Bearer ${groqKey}` },
@@ -1335,7 +1473,6 @@ bot.on("voice", async (msg) => {
   try {
     const session = await getActiveSession(telegramId);
 
-    // Якщо активна рольова гра — передаємо голос як повідомлення клієнту
     if (session?.mode === "roleplay") {
       await bot.sendChatAction(chatId, "typing");
       const transcript = await transcribeAudio(msg.voice!.file_id, "audio/ogg");
@@ -1343,9 +1480,7 @@ bot.on("voice", async (msg) => {
         await bot.sendMessage(chatId, "⚠️ Не вдалося розпізнати. Спробуйте ще раз.");
         return;
       }
-      // Показуємо що сказав менеджер
       await bot.sendMessage(chatId, `🎤 *Ви:* ${transcript}`, { parse_mode: "Markdown" });
-      // Передаємо в рольову гру як текст
       const s = session.state as any;
       const scenario = SCENARIOS.find(sc => sc.title === s.scenario?.title) ?? SCENARIOS[0];
       const response = await getRoleplayResponse(scenario, s.history ?? [], transcript);
@@ -1359,7 +1494,6 @@ bot.on("voice", async (msg) => {
       return;
     }
 
-    // Інакше — стандартний аналіз дзвінку
     await bot.sendMessage(chatId, "🎙️ Отримав голосове! Транскрибую...", { parse_mode: "Markdown" });
     const transcript = await transcribeAudio(msg.voice!.file_id, "audio/ogg");
     if (!transcript || transcript.length < 10) {
@@ -1374,6 +1508,7 @@ bot.on("voice", async (msg) => {
     await bot.sendMessage(chatId, "⚠️ Помилка аналізу. Спробуйте ще раз.");
   }
 });
+
 bot.on("audio", async (msg) => {
   const chatId = msg.chat.id;
   try {
@@ -1410,17 +1545,14 @@ bot.on("callback_query", async (query) => {
     const targetId = approveMatch[1];
     await setAccessStatus(targetId, "approved");
     await bot.answerCallbackQuery(query.id, { text: "✅ Схвалено" });
-    // Оновлюємо повідомлення у адміна
     await bot.editMessageReplyMarkup(
       { inline_keyboard: [[{ text: "✅ Схвалено", callback_data: "done" }]] },
       { chat_id: query.message?.chat.id, message_id: query.message?.message_id }
     ).catch(() => {});
-    // Повідомляємо користувача
     await bot.sendPhoto(targetId, getWelcomePhoto() as any).catch(() => {});
-   await bot.sendMessage(targetId, WELCOME_MESSAGE, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD }).catch(async () => {
-  // Якщо Markdown не спрацював — відправляємо без форматування
-  await bot.sendMessage(targetId, WELCOME_MESSAGE.replace(/\*/g, ""), MAIN_MENU_KEYBOARD).catch(() => {});
-});
+    await bot.sendMessage(targetId, WELCOME_MESSAGE, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD }).catch(async () => {
+      await bot.sendMessage(targetId, WELCOME_MESSAGE.replace(/\*/g, ""), MAIN_MENU_KEYBOARD).catch(() => {});
+    });
   }
 
   if (rejectMatch) {

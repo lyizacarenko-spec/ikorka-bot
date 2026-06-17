@@ -875,7 +875,7 @@ bot.on("message", async (msg) => {
     // HELP
     if (text === "ℹ️ Допомога" || text === "/help") {
       const adminExtra = telegramId === ADMIN_ID
-        ? `\n\n👑 *Адмін-команди:*\n/users — список всіх з ID\n/ban ID — видалити з рейтингів\n/unban ID — повернути в рейтинги`
+        ? `\n\n👑 *Адмін-команди:*\n/users — список всіх з ID\n/remove — зручний вибір кого видалити з рейтингів (кнопками)\n/ban ID — видалити з рейтингів вручну\n/unban ID — повернути в рейтинги`
         : "";
       await bot.sendMessage(chatId, `ℹ️ *Як користуватися ботом*\n\n🧠 *Квіз* — відповідайте А, Б, В або Г\n🎭 *Рольові ігри* — /feedback для порад, /end для завершення\n📅 *Виклик дня* — одна відповідь на день\n🔔 /notifications — сповіщення вкл/викл\n⏰ /settime — час сповіщень${adminExtra}`, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
       return;
@@ -1002,6 +1002,32 @@ bot.on("message", async (msg) => {
           await bot.sendMessage(chatId, lines.slice(12).join("\n\n"), { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
         }
       }
+      return;
+    }
+
+    // REMOVE MENU (тільки адмін) — зручний вибір співробітника кнопками замість ручного копіювання ID
+    if (telegramId === ADMIN_ID && (text === "/remove" || text === "🗑 Видалити співробітника")) {
+      const allUsers = await pool.query(
+        `SELECT u.telegram_id, u.first_name, u.username, ar.status as access_status
+         FROM users u
+         LEFT JOIN access_requests ar ON u.telegram_id = ar.telegram_id
+         WHERE u.telegram_id != $1
+           AND (ar.status IS NULL OR ar.status != 'banned')
+         ORDER BY u.first_name ASC NULLS LAST`,
+        [ADMIN_ID]
+      );
+      const rows = allUsers.rows;
+      if (rows.length === 0) { await sendMain(chatId, "👥 Немає кого видаляти — список порожній."); return; }
+
+      const keyboard = rows.map((u: any) => {
+        const name = u.first_name ?? u.username ?? `ID:${u.telegram_id}`;
+        return [{ text: name, callback_data: `rmpick_${u.telegram_id}` }];
+      });
+
+      await bot.sendMessage(chatId, "🗑 *Видалити співробітника*\n\nОберіть, кого прибрати з рейтингів (можна відновити пізніше):", {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: keyboard },
+      });
       return;
     }
 
@@ -1705,5 +1731,52 @@ bot.on("callback_query", async (query) => {
       { chat_id: query.message?.chat.id, message_id: query.message?.message_id }
     ).catch(() => {});
     await bot.sendMessage(targetId, "🚫 На жаль, ваш запит на доступ відхилено. Зверніться до адміністратора.").catch(() => {});
+  }
+
+  // ─── ВИДАЛЕННЯ СПІВРОБІТНИКА (вибір зі списку) ───────────────────────────
+  const rmPickMatch = data.match(/^rmpick_(.+)$/);
+  const rmConfirmMatch = data.match(/^rmconfirm_(.+)$/);
+  const rmCancelMatch = data.match(/^rmcancel_(.+)$/);
+
+  if (rmPickMatch) {
+    const targetId = rmPickMatch[1];
+    const u = await getUser(targetId);
+    const name = u?.first_name ?? u?.username ?? `ID:${targetId}`;
+    await bot.answerCallbackQuery(query.id);
+    await bot.editMessageText(
+      `⚠️ Видалити *${name}* з рейтингів?\n\nІсторію (квізи, рольові) буде збережено — можна відновити через /unban.`,
+      {
+        chat_id: query.message?.chat.id,
+        message_id: query.message?.message_id,
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [[
+            { text: "✅ Так, видалити", callback_data: `rmconfirm_${targetId}` },
+            { text: "↩️ Скасувати", callback_data: `rmcancel_${targetId}` },
+          ]],
+        },
+      }
+    ).catch(() => {});
+  }
+
+  if (rmConfirmMatch) {
+    const targetId = rmConfirmMatch[1];
+    const u = await getUser(targetId);
+    const name = u?.first_name ?? u?.username ?? `ID:${targetId}`;
+    await banUser(targetId);
+    await bot.answerCallbackQuery(query.id, { text: "🚫 Видалено" });
+    await bot.editMessageText(`🚫 *${name}* видален${name.endsWith("а") ? "а" : "ий"} з рейтингів.`, {
+      chat_id: query.message?.chat.id,
+      message_id: query.message?.message_id,
+      parse_mode: "Markdown",
+    }).catch(() => {});
+  }
+
+  if (rmCancelMatch) {
+    await bot.answerCallbackQuery(query.id, { text: "Скасовано" });
+    await bot.editMessageText("↩️ Видалення скасовано.", {
+      chat_id: query.message?.chat.id,
+      message_id: query.message?.message_id,
+    }).catch(() => {});
   }
 });

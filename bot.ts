@@ -456,8 +456,8 @@ const IKORKA_KNOWLEDGE = `
 
 ═══ РИБА (слабосолена) ═══
 - Риба 300г: 369 грн (зі знижкою кожна 2-га: 339 грн)
-- Риба 500г: 499 грн (зі знижкою кожна 2-га: 449 грн)
-АКЦІЯ НА РИБУ: кожна друга упаковка зі знижкою (300г: 339 грн, 500г: 449 грн)
+- Риба 500г: 499 грн (зі знижкою кожна 2-га: 459 грн)
+АКЦІЯ НА РИБУ: кожна друга упаковка зі знижкою (300г: 339 грн, 500г: 459 грн)
 
 ═══ КРЕМ-СИР PHILADELPHIA ═══
 ⚠️ ПРОДАЄТЬСЯ ТІЛЬКИ як доповнення до ікри або риби. Окремо НЕ відправляємо!
@@ -749,7 +749,7 @@ const SCRIPTS: Record<string, string> = {
 2️⃣ *Презентуй*
 "Маємо два формати:
 • 300г — 369 грн (кожна 2-га по 339 грн!)
-• 500г — 499 грн (кожна 2-га по 449 грн!)"
+• 500г — 499 грн (кожна 2-га по 459 грн!)"
 
 3️⃣ *Комбо-пропозиція*
 "Риба + Philadelphia + ікра — повний делікатесний набір для сімейного сніданку або подарунку!"
@@ -912,13 +912,25 @@ bot.on("message", async (msg) => {
 
         const medals = ["🥇", "🥈", "🥉"];
 
-        const userLines = rows.map((u: any, i: number) => {
+        // Заголовок зі зведеною статистикою команди (без кнопок)
+        const header = `📊 *Статистика команди*\n\n` +
+          `👥 Всього: ${totalUsers} | 🟢 активні сьогодні\n` +
+          `📝 Питань пройдено: ${totalQuestions}\n` +
+          `📈 Середній результат: ${avgPct}%\n` +
+          `⬜️ Ще не проходили квіз: ${neverQuiz}\n` +
+          `⚠️ Ще не робили рольову: ${neverRoleplay}\n\n` +
+          `_🟢 <24г | 🟡 <3 дні | 🔴 >3 дні | ⚠️ нема рольової_`;
+
+        await bot.sendMessage(chatId, header, { parse_mode: "Markdown" });
+
+        // Окреме повідомлення на кожного користувача з кнопкою "Написати"
+        for (let i = 0; i < rows.length; i++) {
+          const u = rows[i];
           const pct = u.quiz_total > 0 ? Math.round((u.quiz_score / u.quiz_total) * 100) : 0;
           const level = u.quiz_total === 0 ? "⬜️" : pct >= 80 ? "🏆" : pct >= 60 ? "📈" : pct >= 40 ? "📚" : "🌱";
           const name = u.first_name ?? u.username ?? `ID:${u.telegram_id}`;
           const roleplayMark = u.roleplay_count === 0 ? " ⚠️" : ` 🎭${u.roleplay_count}`;
 
-          // Остання активність
           const lastActive = u.last_active_at ? new Date(u.last_active_at) : null;
           let activeMark = "";
           if (lastActive) {
@@ -932,30 +944,20 @@ bot.on("message", async (msg) => {
             ? `${u.quiz_score}/${u.quiz_total} (${pct}%)`
             : "не проходив";
 
-          const idPart = `\n    🆔 \`${u.telegram_id}\``;
+          const line = `${medals[i] ?? `${i + 1}.`} ${level} *${name}*${activeMark} — ${quizPart}${roleplayMark}\n🆔 \`${u.telegram_id}\``;
 
-          return `${medals[i] ?? `${i + 1}.`} ${level} *${name}*${activeMark} — ${quizPart}${roleplayMark}${idPart}`;
-        });
-
-        // Розбиваємо на частини якщо забагато (Telegram ліміт ~4096 символів)
-        const header = `📊 *Статистика команди*\n\n` +
-          `👥 Всього: ${totalUsers} | 🟢 активні сьогодні\n` +
-          `📝 Питань пройдено: ${totalQuestions}\n` +
-          `📈 Середній результат: ${avgPct}%\n` +
-          `⬜️ Ще не проходили квіз: ${neverQuiz}\n` +
-          `⚠️ Ще не робили рольову: ${neverRoleplay}\n\n` +
-          `_🟢 <24г | 🟡 <3 дні | 🔴 >3 дні | ⚠️ нема рольової_\n\n`;
-
-        const allLines = userLines.join("\n");
-        const fullMsg = header + allLines;
-
-        // Відправляємо частинами якщо довго
-        if (fullMsg.length <= 4000) {
-          await bot.sendMessage(chatId, fullMsg, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
-        } else {
-          await bot.sendMessage(chatId, header + userLines.slice(0, 15).join("\n"), { parse_mode: "Markdown" });
-          await bot.sendMessage(chatId, userLines.slice(15).join("\n"), { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
+          // Кнопка "Написати" відкриває особистий чат з менеджером у Telegram (тільки для адміна)
+          await bot.sendMessage(chatId, line, {
+            parse_mode: "Markdown",
+            reply_markup: {
+              inline_keyboard: [[
+                { text: "💬 Написати", url: `tg://user?id=${u.telegram_id}` },
+              ]],
+            },
+          });
         }
+
+        await sendMain(chatId, "👆 Статистика команди вище.");
       } else {
         const pct = user.quiz_total > 0 ? Math.round((user.quiz_score / user.quiz_total) * 100) : 0;
         const level = pct >= 80 ? "🏆 Експерт" : pct >= 60 ? "📈 Середній" : pct >= 40 ? "📚 Навчається" : "🌱 Початківець";

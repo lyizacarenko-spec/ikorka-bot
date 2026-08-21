@@ -1309,7 +1309,22 @@ bot.on("message", async (msg) => {
       await sendMain(chatId, WELCOME_MESSAGE);
       return;
     }
+// ADMIN COMMANDS
+if (text.startsWith("/reject ") && telegramId === ADMIN_ID) {
+  const targetId = text.replace("/reject ", "").trim();
+  await setAccessStatus(targetId, "rejected");
+  await bot.sendMessage(chatId, `🚫 Користувача ${targetId} заблоковано.`);
+  await bot.sendMessage(targetId, "🚫 Ваш доступ до бота відкликано. Зверніться до адміністратора.").catch(() => {});
+  return;
+}
 
+if (text.startsWith("/approve ") && telegramId === ADMIN_ID) {
+  const targetId = text.replace("/approve ", "").trim();
+  await setAccessStatus(targetId, "approved");
+  await bot.sendMessage(chatId, `✅ Користувача ${targetId} схвалено.`);
+  await bot.sendMessage(targetId, WELCOME_MESSAGE, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD }).catch(() => {});
+  return;
+}
     // HELP
     if (text === "ℹ️ Допомога" || text === "/help") {
       const adminExtra = telegramId === ADMIN_ID

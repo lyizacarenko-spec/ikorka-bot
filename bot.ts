@@ -1333,7 +1333,8 @@ if (text === "/sendholiday" && telegramId === ADMIN_ID) {
     await bot.sendMessage(user.telegram_id, message, { parse_mode: "Markdown" }).catch(() => {});
     count++;
   }
-  await bot.sendMessage(chatId, `✅ Відправлено ${count} користувачам!`);
+await bot.sendMessage(chatId, message, { parse_mode: "Markdown" });
+await bot.sendMessage(chatId, `✅ Відправлено ${count} користувачам!`);
   return;
 }
 if (text.startsWith("/approve ") && telegramId === ADMIN_ID) {

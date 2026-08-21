@@ -1317,7 +1317,25 @@ if (text.startsWith("/reject ") && telegramId === ADMIN_ID) {
   await bot.sendMessage(targetId, "🚫 Ваш доступ до бота відкликано. Зверніться до адміністратора.").catch(() => {});
   return;
 }
+if (text === "/sendholiday" && telegramId === ADMIN_ID) {
+  const daysLeft = 24 - new Date().getUTCDate();
+  const message = `🇺🇦 *До Дня Незалежності — ${daysLeft} ${daysLeft === 1 ? "день" : "дні"}!*\n\n` +
+    `⏰ Нагадуй клієнтам про терміни доставки!\n\n` +
+    `Нова Пошта доставляє 1-2 дні. Хто замовить сьогодні — встигне отримати до свята 📦\n\n` +
+    `📞 *Скрипт:*\n_«До 24 серпня залишилось ${daysLeft} дні. Якщо замовити сьогодні — ікра точно встигне до свята. Підказати що краще взяти до святкового столу?»_\n\n` +
+    `💪 Кожен дзвінок сьогодні — це замовлення до свята! 🚀`;
 
+  const users = await pool.query(
+    "SELECT telegram_id FROM access_requests WHERE status = 'approved'"
+  );
+  let count = 0;
+  for (const user of users.rows) {
+    await bot.sendMessage(user.telegram_id, message, { parse_mode: "Markdown" }).catch(() => {});
+    count++;
+  }
+  await bot.sendMessage(chatId, `✅ Відправлено ${count} користувачам!`);
+  return;
+}
 if (text.startsWith("/approve ") && telegramId === ADMIN_ID) {
   const targetId = text.replace("/approve ", "").trim();
   await setAccessStatus(targetId, "approved");

@@ -272,8 +272,8 @@ async function getAllApprovedUsers() {
   const res = await pool.query(
     `SELECT u.telegram_id, u.first_name
      FROM users u
-     JOIN access_requests ar ON u.telegram_id = ar.telegram_id
-     WHERE ar.status = 'approved'`
+     LEFT JOIN access_requests ar ON u.telegram_id = ar.telegram_id
+     WHERE (ar.status IS NULL OR ar.status NOT IN ('rejected', 'banned'))`
   );
   return res.rows;
 }
@@ -885,7 +885,7 @@ bot.on("message", async (msg) => {
     // HELP
     if (text === "ℹ️ Допомога" || text === "/help") {
       const adminExtra = telegramId === ADMIN_ID
-        ? `\n\n👑 *Адмін-команди:*\n/users — список всіх з ID\n/ban ID — видалити з рейтингів\n/unban ID — повернути в рейтинги\n/broadcast текст — розсилка всім`
+        ? `\n\n👑 *Адмін-команди:*\n/users — список всіх з ID\n/ban ID — видалити з рейтингів\n/unban ID — повернути в рейтинги\n/broadcast текст — розсилка всім\n/send ID текст — відправити одному`
         : "";
       await bot.sendMessage(chatId, `ℹ️ *Як користуватися ботом*\n\n🧠 *Квіз* — відповідайте А, Б, В або Г\n🎭 *Рольові ігри* — /feedback для порад, /end для завершення\n📅 *Виклик дня* — одна відповідь на день\n🔔 /notifications — сповіщення вкл/викл\n⏰ /settime — час сповіщень${adminExtra}`, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
       return;
@@ -970,6 +970,24 @@ bot.on("message", async (msg) => {
         const pct = user.quiz_total > 0 ? Math.round((user.quiz_score / user.quiz_total) * 100) : 0;
         const level = pct >= 80 ? "🏆 Експерт" : pct >= 60 ? "📈 Середній" : pct >= 40 ? "📚 Навчається" : "🌱 Початківець";
         await bot.sendMessage(chatId, `📊 *Моя статистика: ${user.first_name ?? "Менеджер"}*\n\n🧠 Квіз: ${user.quiz_score}/${user.quiz_total} (${pct}%) — ${level}\n🎭 Рольових ігор: ${user.roleplay_count}`, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
+      }
+      return;
+    }
+
+    // SEND TO ONE USER (тільки адмін) — /send ID текст
+    if (telegramId === ADMIN_ID && text.startsWith("/send ")) {
+      const parts = text.replace("/send ", "").trim().split(" ");
+      const targetId = parts[0];
+      const sendText = parts.slice(1).join(" ");
+      if (!targetId || !sendText) {
+        await bot.sendMessage(chatId, "⚠️ Формат: `/send 188693725 Текст повідомлення`", { parse_mode: "Markdown" });
+        return;
+      }
+      try {
+        await bot.sendMessage(targetId, sendText, { parse_mode: "Markdown" });
+        await bot.sendMessage(chatId, `✅ Повідомлення відправлено користувачу \`${targetId}\``, { parse_mode: "Markdown" });
+      } catch {
+        await bot.sendMessage(chatId, `❌ Не вдалося відправити. Можливо користувач заблокував бота.`);
       }
       return;
     }

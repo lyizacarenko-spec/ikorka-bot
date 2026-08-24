@@ -217,449 +217,11 @@ function getTodayDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-// ─── БАНК ГОТОВИХ ПИТАНЬ ДЛЯ ВИКЛИКУ ДНЯ ─────────────────────────────────────
-// ~55 перевірених питань — ІІ підключається лише коли банк вичерпано за 30 днів
-const DAILY_QUESTION_BANK = [
-  // ═══ ЦІНИ НА ІКРУ ═══
-  {
-    question: "Яка ціна на ікру Горбуша у скляній упаковці?",
-    options: ["А) 429 грн", "Б) 449 грн", "В) 459 грн", "Г) 399 грн"],
-    correctIndex: 1,
-    explanation: "Горбуша скло 440г коштує 449 грн. Зверніть увагу: у склі — 440г, у пластику — 500г (399 грн).",
-    topic: "ціни на ікру",
-  },
-  {
-    question: "Скільки коштує ікра Кета Преміум у скляній упаковці?",
-    options: ["А) 539 грн", "Б) 569 грн", "В) 609 грн", "Г) 629 грн"],
-    correctIndex: 2,
-    explanation: "Кета Преміум скло 500г — 609 грн. Звичайна Кета скло — 539 грн.",
-    topic: "ціни на ікру",
-  },
-  {
-    question: "Яка ціна на ікру Лосось у пластиковій упаковці 500г?",
-    options: ["А) 409 грн", "Б) 459 грн", "В) 509 грн", "Г) 499 грн"],
-    correctIndex: 1,
-    explanation: "Лосось пластик 500г — 459 грн. Лосось скло 500г дорожче — 509 грн.",
-    topic: "ціни на ікру",
-  },
-  {
-    question: "Яка ціна Осетер Преміум у скляній упаковці?",
-    options: ["А) 549 грн", "Б) 589 грн", "В) 609 грн", "Г) 629 грн"],
-    correctIndex: 3,
-    explanation: "Осетер Преміум скло 500г — 629 грн. Це найдорожча позиція серед скляних баночок.",
-    topic: "ціни на ікру",
-  },
-  {
-    question: "Скільки коштує ікра Щука у пластику 500г?",
-    options: ["А) 329 грн", "Б) 379 грн", "В) 399 грн", "Г) 429 грн"],
-    correctIndex: 1,
-    explanation: "Щука пластик 500г — 379 грн. Найдоступніша позиція в асортименті.",
-    topic: "ціни на ікру",
-  },
-  {
-    question: "Яка ціна ікри Форель у пластиковій упаковці?",
-    options: ["А) 399 грн", "Б) 409 грн", "В) 429 грн", "Г) 459 грн"],
-    correctIndex: 1,
-    explanation: "Форель пластик 500г — 409 грн. У склі (440г) — дорожче, 459 грн.",
-    topic: "ціни на ікру",
-  },
-  {
-    question: "Скільки коштує ікра Веслонос у скляній упаковці?",
-    options: ["А) 509 грн", "Б) 529 грн", "В) 549 грн", "Г) 559 грн"],
-    correctIndex: 3,
-    explanation: "Веслонос скло 500г — 559 грн. У пластику — 509 грн.",
-    topic: "ціни на ікру",
-  },
-
-  // ═══ РОЗМІР ЗЕРНА ═══
-  {
-    question: "Яка ікра має найменше зерно в асортименті Ikorka Shop?",
-    options: ["А) Щука", "Б) Осетер", "В) Веслонос", "Г) Форель"],
-    correctIndex: 2,
-    explanation: "Веслонос — найменше зерно: 1.5-2 мм. Осетер — 2.5-3 мм, Щука — 2-3.5 мм.",
-    topic: "розмір зерна",
-  },
-  {
-    question: "Який розмір зерна у ікри Кета Преміум?",
-    options: ["А) 4-5 мм", "Б) 5-6 мм", "В) 5-7 мм", "Г) 6-8 мм"],
-    correctIndex: 3,
-    explanation: "Кета Преміум має зерно 6-8 мм — найбільше в усьому асортименті!",
-    topic: "розмір зерна",
-  },
-  {
-    question: "Яка ікра має зерно 4-4.5 мм?",
-    options: ["А) Горбуша", "Б) Форель", "В) Лосось", "Г) Кижуч"],
-    correctIndex: 1,
-    explanation: "Форель — зерно 4-4.5 мм. Горбуша — 4-5 мм, Лосось — 5-6 мм, Кижуч — 5-5.5 мм.",
-    topic: "розмір зерна",
-  },
-  {
-    question: "Яке зерно у звичайної Щуки та Щуки Преміум?",
-    options: ["А) Щука 2-3.5 мм / Преміум 3-4 мм", "Б) Щука 3-4 мм / Преміум 4-5 мм", "В) Однакове — 2-3 мм", "Г) Щука 1.5-2 мм / Преміум 2-3 мм"],
-    correctIndex: 0,
-    explanation: "Щука — 2-3.5 мм, Щука Преміум — 3-4 мм. Різниця в розмірі зерна — одна з ключових переваг Преміум.",
-    topic: "розмір зерна",
-  },
-
-  // ═══ АКЦІЇ НА ІКРУ ═══
-  {
-    question: "Що означає акція 1+1=3 на ікру?",
-    options: ["А) Знижка 33% на всі банки", "Б) Купуєш 2 банки — 3-тя безкоштовно", "В) Купуєш 1 — ще 2 у подарунок", "Г) Знижка 50% на третю банку"],
-    correctIndex: 1,
-    explanation: "1+1=3: купуєш 2 банки — третя (найдешевша) безкоштовно. Жодних додаткових знижок на інші банки немає.",
-    topic: "акції на ікру",
-  },
-  {
-    question: "Яка акція дає безкоштовну доставку і одну банку в подарунок?",
-    options: ["А) 1+1=3", "Б) 3=4", "В) 3=5", "Г) ХХЛ 1.5кг"],
-    correctIndex: 1,
-    explanation: "Акція 3=4: купуєш 3 банки — четверта безкоштовно + безкоштовна доставка. 1+1=3 — без доставки, 3=5 — доставка за рахунок клієнта.",
-    topic: "акції на ікру",
-  },
-  {
-    question: "При якій акції клієнт отримує 6 банок і безкоштовну доставку?",
-    options: ["А) 3=5", "Б) 3=4 + 3=4", "В) 4=6", "Г) 1+1=3 двічі"],
-    correctIndex: 2,
-    explanation: "4=6 — найвигідніша акція: купуєш 4 банки, отримуєш 6 + безкоштовна доставка. Фактично 2 банки в подарунок!",
-    topic: "акції на ікру",
-  },
-  {
-    question: "Чим відрізняється акція 3=5 від 3=4?",
-    options: ["А) 3=5 дає більше банок, але доставка за рахунок клієнта", "Б) 3=5 включає безкоштовну доставку", "В) Вони однакові", "Г) 3=4 вигідніша за 3=5"],
-    correctIndex: 0,
-    explanation: "3=5: 3 банки — отримуєш 5, але доставка за рахунок клієнта. 3=4: 3 банки — отримуєш 4 + безкоштовна доставка.",
-    topic: "акції на ікру",
-  },
-  {
-    question: "Скільки коштує ХХЛ упаковка ікри 1.5кг?",
-    options: ["А) 999 грн", "Б) 1099 грн", "В) 1199 грн", "Г) 1299 грн"],
-    correctIndex: 3,
-    explanation: "ХХЛ 1.5кг — 1299 грн. Акція 1=2: купуєш одну велику упаковку — отримуєш дві.",
-    topic: "акції на ікру",
-  },
-
-  // ═══ УПАКОВКА ═══
-  {
-    question: "Яка вага ікри Горбуша у скляній та пластиковій упаковці?",
-    options: ["А) Скло 500г / Пластик 440г", "Б) Скло 440г / Пластик 500г", "В) Обидві по 500г", "Г) Скло 440г / Пластик 440г"],
-    correctIndex: 1,
-    explanation: "Горбуша в склі — 440г (449 грн), у пластику — 500г (399 грн). Теж саме стосується Форелі та Осетра.",
-    topic: "упаковка ікри",
-  },
-  {
-    question: "Чи є Щука Преміум у пластиковій упаковці?",
-    options: ["А) Так, 500г", "Б) Так, 440г", "В) Ні, тільки скло 500г", "Г) Так, але тільки в ХХЛ форматі"],
-    correctIndex: 2,
-    explanation: "Щука Преміум — виключно скло 500г (489 грн). Пластикова упаковка для цієї позиції відсутня.",
-    topic: "упаковка ікри",
-  },
-  {
-    question: "Коли клієнт купує подарунок — яку упаковку рекомендуємо?",
-    options: ["А) Пластик — він дешевший", "Б) Скло — виглядає презентабельно", "В) Будь-яку — однаково", "Г) ХХЛ — найбільше враження"],
-    correctIndex: 1,
-    explanation: "Для подарунку ЗАВЖДИ скло — виглядає дорого та презентабельно. Пластик — практичний варіант для себе.",
-    topic: "упаковка ікри",
-  },
-
-  // ═══ ЗБЕРІГАННЯ ═══
-  {
-    question: "Скільки зберігається закрита банка ікри?",
-    options: ["А) 1 місяць при 0-5°C", "Б) 3 місяці при 0-5°C", "В) 6 місяців у морозилці", "Г) 12 місяців при кімнатній температурі"],
-    correctIndex: 1,
-    explanation: "Закрита ікра зберігається 3 місяці при температурі 0-5°C (холодильник). Не заморожувати!",
-    topic: "зберігання ікри",
-  },
-  {
-    question: "Скільки зберігається відкрита банка ікри в холодильнику?",
-    options: ["А) 3 доби", "Б) 7 діб", "В) 14 діб", "Г) 30 діб"],
-    correctIndex: 2,
-    explanation: "Після відкриття ікру зберігають у холодильнику не більше 14 діб. Важливо повідомляти клієнтам!",
-    topic: "зберігання ікри",
-  },
-  {
-    question: "При якій температурі зберігається ікра Ikorka Shop?",
-    options: ["А) -5 до 0°C (морозилка)", "Б) 0-5°C (холодильник)", "В) 5-10°C", "Г) Кімнатна температура"],
-    correctIndex: 1,
-    explanation: "Ікра зберігається при 0-5°C — стандартний холодильник. Заморожувати не можна — псується структура зерна.",
-    topic: "зберігання ікри",
-  },
-
-  // ═══ PHILADELPHIA ═══
-  {
-    question: "Яка умова продажу крем-сиру Philadelphia в Ikorka Shop?",
-    options: ["А) Продається будь-кому окремо", "Б) Тільки з ікрою або рибою", "В) Тільки при замовленні від 2 банок ікри", "Г) Тільки корпоративним клієнтам"],
-    correctIndex: 1,
-    explanation: "Philadelphia продається ТІЛЬКИ як доповнення до ікри або риби. Окремо не відправляємо — це важливо пояснити клієнту.",
-    topic: "Philadelphia",
-  },
-  {
-    question: "Скільки видів Philadelphia є в асортименті?",
-    options: ["А) 1", "Б) 2", "В) 3", "Г) 4"],
-    correctIndex: 2,
-    explanation: "3 види: Balance 195г (115 грн), з зеленню 195г (115 грн), з зеленою цибулею 175г (125 грн).",
-    topic: "Philadelphia",
-  },
-  {
-    question: "Яка ціна Philadelphia Balance 195г?",
-    options: ["А) 95 грн", "Б) 105 грн", "В) 115 грн", "Г) 125 грн"],
-    correctIndex: 2,
-    explanation: "Philadelphia Balance 195г — 115 грн. Особливість: знижений вміст жиру -30%, ніжний вершковий смак.",
-    topic: "Philadelphia",
-  },
-  {
-    question: "Яка Philadelphia найдорожча і чому?",
-    options: ["А) Balance — бо найпопулярніша", "Б) З зеленню — бо ресторанний смак", "В) З зеленою цибулею 175г — 125 грн", "Г) Всі однакової ціни"],
-    correctIndex: 2,
-    explanation: "Philadelphia з зеленою цибулею 175г — 125 грн (дорожча і менша за обсягом). Balance і з зеленню — по 115 грн за 195г.",
-    topic: "Philadelphia",
-  },
-  {
-    question: "Яке комбо пропонуємо клієнту для ресторанної подачі вдома?",
-    options: ["А) Ікра + Philadelphia Balance", "Б) Ікра + Philadelphia з зеленню", "В) Риба + Philadelphia з зеленою цибулею", "Г) Ікра + Риба без сиру"],
-    correctIndex: 1,
-    explanation: "Ікра + Philadelphia з зеленню = ресторанна подача. Balance — класичний делікатес, з зеленою цибулею — до риби та бутербродів.",
-    topic: "Philadelphia",
-  },
-
-  // ═══ РИБА ═══
-  {
-    question: "Яка ціна слабосоленої риби 300г зі знижкою (кожна 2-га упаковка)?",
-    options: ["А) 299 грн", "Б) 319 грн", "В) 339 грн", "Г) 359 грн"],
-    correctIndex: 2,
-    explanation: "Риба 300г — 369 грн, зі знижкою (кожна 2-га упаковка) — 339 грн.",
-    topic: "слабосолена риба",
-  },
-  {
-    question: "Яка повна ціна слабосоленої риби 500г?",
-    options: ["А) 449 грн", "Б) 459 грн", "В) 479 грн", "Г) 499 грн"],
-    correctIndex: 3,
-    explanation: "Риба 500г — 499 грн (повна ціна). Зі знижкою (кожна 2-га упаковка) — 459 грн.",
-    topic: "слабосолена риба",
-  },
-  {
-    question: "На яку кількість упаковок риби діє знижка?",
-    options: ["А) На кожну третю", "Б) На кожну другу", "В) При замовленні від 3 штук", "Г) Тільки в комбо з ікрою"],
-    correctIndex: 1,
-    explanation: "Акція на рибу: кожна ДРУГА упаковка зі знижкою. Тобто при замовленні 2 штук — друга дешевше.",
-    topic: "слабосолена риба",
-  },
-
-  // ═══ ДОСТАВКА І КОМІСІЯ НП ═══
-  {
-    question: "Яка комісія Нової Пошти при накладеному платежі?",
-    options: ["А) 1% + 10 грн", "Б) 2% + 20 грн", "В) 3% + 15 грн", "Г) Фіксовані 50 грн"],
-    correctIndex: 1,
-    explanation: "Комісія НП: 2% від суми замовлення + 20 грн. Завжди попереджайте клієнта до оформлення!",
-    topic: "доставка та комісія НП",
-  },
-  {
-    question: "Коли доставка для клієнта безкоштовна?",
-    options: ["А) При замовленні від 3 банок будь-якої акції", "Б) При акціях 3=4 або 4=6", "В) Завжди безкоштовна", "Г) Тільки при акції 4=6"],
-    correctIndex: 1,
-    explanation: "Безкоштовна доставка — тільки при акціях 3=4 та 4=6. При 1+1=3 та 3=5 — доставка за рахунок клієнта.",
-    topic: "доставка та комісія НП",
-  },
-  {
-    question: "Клієнт замовляє ікру на 1000 грн накладеним платежем. Яка комісія НП?",
-    options: ["А) 20 грн", "Б) 30 грн", "В) 40 грн", "Г) 50 грн"],
-    correctIndex: 2,
-    explanation: "2% від 1000 грн = 20 грн + 20 грн фіксована = 40 грн комісії. Формула: сума × 0.02 + 20.",
-    topic: "доставка та комісія НП",
-  },
-  {
-    question: "Чи йде риба з безкоштовною доставкою якщо клієнт бере акцію 4=6 на ікру?",
-    options: ["А) Ні, риба доставляється окремо за кошт клієнта", "Б) Так, риба їде разом з ікрою безкоштовно", "В) Тільки якщо риба на суму від 500 грн", "Г) Тільки один вид риби безкоштовно"],
-    correctIndex: 1,
-    explanation: "Якщо клієнт бере акцію з безкоштовною доставкою (3=4 або 4=6) — риба їде разом безкоштовно. Окремо рибу безкоштовно не відправляємо.",
-    topic: "доставка та комісія НП",
-  },
-
-  // ═══ ПРЕМІУМ ЛІНІЙКА ═══
-  {
-    question: "Яка головна відмінність Щуки Преміум від звичайної Щуки?",
-    options: ["А) Більше зерно (3-4 мм замість 2-3.5 мм) і тільки скло", "Б) Дешевша ціна", "В) Є у пластику", "Г) Менше зерно, але кращий смак"],
-    correctIndex: 0,
-    explanation: "Щука Преміум: зерно 3-4 мм (більше!), тільки скло 500г — 489 грн. Звичайна Щука: 2-3.5 мм, є скло і пластик.",
-    topic: "Преміум лінійка",
-  },
-  {
-    question: "Яке зерно у Осетра Преміум і чим він особливий?",
-    options: ["А) 2.5-3 мм, як звичайний Осетер", "Б) 3-3.5 мм, чорна ікра!", "В) 4-5 мм, найбільше в Преміум", "Г) 1.5-2 мм, найменше"],
-    correctIndex: 1,
-    explanation: "Осетер Преміум — зерно 3-3.5 мм, ЧОРНА ікра! Це унікальна позиція в асортименті. Ціна: 629 грн (скло) / 589 грн (пластик).",
-    topic: "Преміум лінійка",
-  },
-  {
-    question: "Яка Преміум ікра має найбільше зерно в усьому асортименті?",
-    options: ["А) Горбуша Преміум", "Б) Осетер Преміум", "В) Кета Преміум", "Г) Щука Преміум"],
-    correctIndex: 2,
-    explanation: "Кета Преміум — зерно 6-8 мм, найбільше в асортименті! Ціна: 609 грн (скло).",
-    topic: "Преміум лінійка",
-  },
-  {
-    question: "Скільки коштує Горбуша Преміум у пластику?",
-    options: ["А) 399 грн", "Б) 449 грн", "В) 499 грн", "Г) 549 грн"],
-    correctIndex: 3,
-    explanation: "Горбуша Преміум пластик 500г — 549 грн. Звичайна Горбуша пластик — 399 грн. Різниця — 150 грн за якість зерна.",
-    topic: "Преміум лінійка",
-  },
-
-  // ═══ ПОДАРУНКОВИЙ НАБІР ═══
-  {
-    question: "Клієнт хоче купити подарунок на 1500 грн. Що рекомендуємо?",
-    options: ["А) 3 банки пластику + акція 1+1=3", "Б) 3 банки скла Преміум + акція 3=4 + Philadelphia", "В) 1 банка ХХЛ 1.5кг", "Г) 5 банок пластику"],
-    correctIndex: 1,
-    explanation: "Для подарунку — скло (презентабельно), Преміум лінійка (враження), акція 3=4 (4-та банка безкоштовно + доставка), Philadelphia — як бонус до набору.",
-    topic: "подарунковий набір",
-  },
-  {
-    question: "Які топ-5 позицій для подарунку в Ikorka Shop?",
-    options: ["А) Щука, Горбуша, Форель, Веслонос, Осетер", "Б) Кета Преміум, Осетер Преміум, Лосось, Горбуша Преміум, Щука Преміум", "В) Будь-які — клієнт сам обере", "Г) Тільки пластик — менше б'ється"],
-    correctIndex: 1,
-    explanation: "Топ для подарунку: Кета Преміум, Осетер Преміум, Лосось, Горбуша Преміум, Щука Преміум — все скло, красива подача.",
-    topic: "подарунковий набір",
-  },
-  {
-    question: "Навіщо пропонувати Philadelphia до подарункового набору з ікрою?",
-    options: ["А) Щоб збільшити чек", "Б) Виглядає як готовий делікатесний набір — більше цінності для клієнта", "В) Philadelphia зменшує ціну ікри", "Г) Обов'язково за правилами магазину"],
-    correctIndex: 1,
-    explanation: "Philadelphia + ікра = готовий делікатесний набір. Клієнт отримує більше цінності, ти — допродаж. Подарунок виглядає дорожче і продуманіше.",
-    topic: "подарунковий набір",
-  },
-
-  // ═══ РОБОТА З ЗАПЕРЕЧЕННЯМИ ═══
-  {
-    question: "Клієнт каже 'дорого, в АТБ дешевше'. Ваш перший крок?",
-    options: ["А) Дати знижку одразу", "Б) Приєднатися: 'Розумію, ціна важлива' і пояснити різницю в якості", "В) Сказати що АТБ продає підробку", "Г) Запропонувати менший обсяг"],
-    correctIndex: 1,
-    explanation: "Спочатку приєднайся до клієнта, потім поясни: в АТБ — консерванти, довгий термін. У нас: ікра + сіль + олія, свіжість. Після — запропонуй акцію.",
-    topic: "робота з запереченнями",
-  },
-  {
-    question: "Як пояснити клієнту вартість порції ікри 500г?",
-    options: ["А) 'Це дорого, але якісно'", "Б) 'Банка 500г — це 10-15 бутербродів, ~30-40 грн за порцію'", "В) 'Порівняйте з ціною в ресторані'", "Г) 'Зате доставка безкоштовна'"],
-    correctIndex: 1,
-    explanation: "Ділимо ціну на порції: 500г = 10-15 бутербродів = 30-40 грн/порція. Дешевше суші та ресторану! Це знімає відчуття 'дорого'.",
-    topic: "робота з запереченнями",
-  },
-  {
-    question: "Клієнт знайшов ікру дешевше на маркетплейсі. Як утримати?",
-    options: ["А) Одразу дати знижку", "Б) Пояснити гарантію якості, запропонувати акцію і нові продукти (Philadelphia, риба)", "В) Сказати що там підробка", "Г) Не реагувати, клієнт сам повернеться"],
-    correctIndex: 1,
-    explanation: "Маркетплейс — невідомий продавець. Ми — перевірена якість. Запропонуй акцію 4=6 і Philadelphia — загальна цінність набору вища за економію від конкурента.",
-    topic: "робота з запереченнями",
-  },
-  {
-    question: "Клієнт каже 'подумаю і передзвоню'. Що робити?",
-    options: ["А) Сказати 'добре, чекаємо' і чекати", "Б) Уточнити що саме стримує і запропонувати вирішення прямо зараз", "В) Натискати і вимагати рішення", "Г) Запропонувати передзвонити завтра"],
-    correctIndex: 1,
-    explanation: "'Передзвоню' часто означає відмову. Уточни: 'Що саме зупиняє? Ціна? Асортимент?' — і закрий заперечення тут і зараз. Злив на перезвон — мінус у оцінці.",
-    topic: "робота з запереченнями",
-  },
-
-  // ═══ ЗАКРИТТЯ УГОДИ ═══
-  {
-    question: "Як правильно закрити замовлення після вибору ікри?",
-    options: ["А) 'Ну що, берете?'", "Б) Підсумувати вибір, запропонувати Philadelphia/рибу, уточнити оплату та доставку", "В) Одразу питати номер телефону", "Г) Чекати поки клієнт сам скаже"],
-    correctIndex: 1,
-    explanation: "Закриття: підсумуй (що, скільки, яка акція), зроби допродаж (Philadelphia, риба), уточни оплату (картка чи НП?) і дату доставки. Фіксуй замовлення.",
-    topic: "закриття угоди",
-  },
-  {
-    question: "Яку інформацію обов'язково повідомляємо при оформленні замовлення з НП?",
-    options: ["А) Тільки адресу відділення", "Б) Комісію НП (2%+20 грн) до підтвердження замовлення", "В) Тільки суму замовлення", "Г) Умови акції ще раз"],
-    correctIndex: 1,
-    explanation: "Комісію НП (2%+20 грн) ЗАВЖДИ повідомляємо ДО підтвердження. Клієнт не повинен дізнатися про неї на пошті — це порушення довіри.",
-    topic: "закриття угоди",
-  },
-
-  // ═══ КОМБО-ПРОДАЖІ ═══
-  {
-    question: "Яке комбо пропонуємо як 'ідеальний сніданок'?",
-    options: ["А) Ікра + Ікра Преміум", "Б) Риба + Philadelphia", "В) Ікра + Лосось", "Г) Philadelphia + Philadelphia з зеленню"],
-    correctIndex: 1,
-    explanation: "Риба + Philadelphia = ідеальний сніданок. Також: Ікра + Philadelphia = класичний делікатес, Риба + Ікра + Philadelphia = повний делікатесний набір.",
-    topic: "комбо-продажі",
-  },
-  {
-    question: "Клієнт вже обрав 2 банки ікри. Що пропонуємо наступним?",
-    options: ["А) Більше ікри для кращої акції", "Б) Philadelphia або рибу як доповнення", "В) Нічого — не перевантажуємо", "Г) Знижку на наступне замовлення"],
-    correctIndex: 1,
-    explanation: "Після вибору ікри — завжди пропонуємо Philadelphia (тільки разом з ікрою!) або рибу. Це природний допродаж, який підвищує цінність набору.",
-    topic: "комбо-продажі",
-  },
-
-  // ═══ ВИДИ ІКРИ ═══
-  {
-    question: "Яка ікра в асортименті Ikorka Shop є чорною?",
-    options: ["А) Веслонос", "Б) Щука", "В) Осетер", "Г) Кижуч"],
-    correctIndex: 2,
-    explanation: "Осетер — єдина чорна ікра в асортименті! Зерно 2.5-3 мм. Осетер скло 440г — 549 грн, пластик 500г — 529 грн.",
-    topic: "види ікри",
-  },
-  {
-    question: "Скільки видів ікри є в асортименті Ikorka Shop (без урахування Преміум)?",
-    options: ["А) 6 видів", "Б) 8 видів", "В) 10 видів", "Г) 12 видів"],
-    correctIndex: 1,
-    explanation: "8 базових видів: Щука, Горбуша, Форель, Лосось, Кижуч, Кета, Веслонос, Осетер. Плюс 4 Преміум версії = 12 позицій загалом.",
-    topic: "види ікри",
-  },
-  {
-    question: "Яка ікра з однакового виду має різний розмір упаковки у склі та пластику?",
-    options: ["А) Лосось і Кижуч", "Б) Горбуша, Форель, Осетер", "В) Кета і Веслонос", "Г) Всі однакові — по 500г"],
-    correctIndex: 1,
-    explanation: "Горбуша, Форель, Осетер — у склі 440г, у пластику 500г. Всі інші позиції в обох упаковках по 500г.",
-    topic: "види ікри",
-  },
-
-  // ═══ КИЖУЧ І ЛОСОСЬ ═══
-  {
-    question: "Яка різниця між ікрою Кижуч і Лосось?",
-    options: ["А) Кижуч більше зерно", "Б) Однакова ціна, Кижуч 5-5.5 мм / Лосось 5-6 мм", "В) Лосось дешевший", "Г) Лосось тільки у склі"],
-    correctIndex: 1,
-    explanation: "Кижуч і Лосось — однакова ціна (скло 509 грн / пластик 459 грн). Різниця: Кижуч 5-5.5 мм, Лосось 5-6 мм. Лосось — трохи більше зерно.",
-    topic: "види ікри",
-  },
-];
-
-// Отримати питання дня: спочатку з банку (без повторів за 30 днів), потім ІІ
 async function getOrCreateDailyChallenge(generateFn: () => Promise<any>) {
   const date = getTodayDate();
-
-  // Якщо питання на сьогодні вже є — повертаємо його
-  const existing = await pool.query("SELECT * FROM daily_challenges WHERE date = $1", [date]);
-  if (existing.rows.length > 0) return existing.rows[0];
-
-  // Питання які вже використовувались за останні 30 днів
-  const recentRes = await pool.query(
-    `SELECT question FROM daily_challenges WHERE date >= $1 AND date < $2`,
-    [
-      new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10),
-      date,
-    ]
-  );
-  const recentQuestions = new Set(recentRes.rows.map((r: any) => r.question));
-
-  // Фільтруємо банк — прибираємо питання що були останні 30 днів
-  const available = DAILY_QUESTION_BANK.filter(q => !recentQuestions.has(q.question));
-
-  let data: any;
-  if (available.length > 0) {
-    // Беремо випадкове з доступних
-    data = available[Math.floor(Math.random() * available.length)];
-    data = {
-      question: data.question,
-      options: data.options,
-      correctIndex: data.correctIndex,
-      explanation: data.explanation,
-      topic: data.topic,
-    };
-  } else {
-    // Банк вичерпано — генеруємо через ІІ
-    console.log("📚 Daily bank exhausted, generating with AI...");
-    data = await generateFn();
-  }
-
+  const res = await pool.query("SELECT * FROM daily_challenges WHERE date = $1", [date]);
+  if (res.rows.length > 0) return res.rows[0];
+  const data = await generateFn();
   const ins = await pool.query(
     "INSERT INTO daily_challenges (date, question, options, correct_index, explanation, topic) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *",
     [date, data.question, JSON.stringify(data.options), data.correctIndex, data.explanation, data.topic]
@@ -706,6 +268,16 @@ async function getUsersForNotification(hourUtc: number) {
 }
 
 // Отримати користувачів які не були активні більше 24 годин (для нагадувань)
+async function getAllApprovedUsers() {
+  const res = await pool.query(
+    `SELECT u.telegram_id, u.first_name
+     FROM users u
+     JOIN access_requests ar ON u.telegram_id = ar.telegram_id
+     WHERE ar.status = 'approved'`
+  );
+  return res.rows;
+}
+
 async function getInactiveUsers(hoursInactive = 24) {
   const res = await pool.query(
     `SELECT telegram_id, first_name, quiz_total, roleplay_count
@@ -894,8 +466,8 @@ const IKORKA_KNOWLEDGE = `
 
 ═══ РИБА (слабосолена) ═══
 - Риба 300г: 369 грн (зі знижкою кожна 2-га: 339 грн)
-- Риба 500г: 499 грн (зі знижкою кожна 2-га: 459 грн)
-АКЦІЯ НА РИБУ: кожна друга упаковка зі знижкою (300г: 339 грн, 500г: 459 грн)
+- Риба 500г: 499 грн (зі знижкою кожна 2-га: 449 грн)
+АКЦІЯ НА РИБУ: кожна друга упаковка зі знижкою (300г: 339 грн, 500г: 449 грн)
 
 ═══ КРЕМ-СИР PHILADELPHIA ═══
 ⚠️ ПРОДАЄТЬСЯ ТІЛЬКИ як доповнення до ікри або риби. Окремо НЕ відправляємо!
@@ -1187,7 +759,7 @@ const SCRIPTS: Record<string, string> = {
 2️⃣ *Презентуй*
 "Маємо два формати:
 • 300г — 369 грн (кожна 2-га по 339 грн!)
-• 500г — 499 грн (кожна 2-га по 459 грн!)"
+• 500г — 499 грн (кожна 2-га по 449 грн!)"
 
 3️⃣ *Комбо-пропозиція*
 "Риба + Philadelphia + ікра — повний делікатесний набір для сімейного сніданку або подарунку!"
@@ -1309,45 +881,11 @@ bot.on("message", async (msg) => {
       await sendMain(chatId, WELCOME_MESSAGE);
       return;
     }
-// ADMIN COMMANDS
-if (text.startsWith("/reject ") && telegramId === ADMIN_ID) {
-  const targetId = text.replace("/reject ", "").trim();
-  await setAccessStatus(targetId, "rejected");
-  await bot.sendMessage(chatId, `🚫 Користувача ${targetId} заблоковано.`);
-  await bot.sendMessage(targetId, "🚫 Ваш доступ до бота відкликано. Зверніться до адміністратора.").catch(() => {});
-  return;
-}
-if (text === "/sendholiday" && telegramId === ADMIN_ID) {
-  const daysLeft = 24 - new Date().getUTCDate();
-  const message = `🇺🇦 *До Дня Незалежності — ${daysLeft} ${daysLeft === 1 ? "день" : "дні"}!*\n\n` +
-    `⏰ Нагадуй клієнтам про терміни доставки!\n\n` +
-    `Нова Пошта доставляє 1-2 дні. Хто замовить сьогодні — встигне отримати до свята 📦\n\n` +
-    `📞 *Скрипт:*\n_«До 24 серпня залишилось ${daysLeft} дні. Якщо замовити сьогодні — ікра точно встигне до свята. Підказати що краще взяти до святкового столу?»_\n\n` +
-    `💪 Кожен дзвінок сьогодні — це замовлення до свята! 🚀`;
 
-  const users = await pool.query(
-    "SELECT telegram_id FROM access_requests WHERE status = 'approved'"
-  );
-  let count = 0;
-  for (const user of users.rows) {
-    await bot.sendMessage(user.telegram_id, message, { parse_mode: "Markdown" }).catch(() => {});
-    count++;
-  }
-await bot.sendMessage(chatId, message, { parse_mode: "Markdown" });
-await bot.sendMessage(chatId, `✅ Відправлено ${count} користувачам!`);
-  return;
-}
-if (text.startsWith("/approve ") && telegramId === ADMIN_ID) {
-  const targetId = text.replace("/approve ", "").trim();
-  await setAccessStatus(targetId, "approved");
-  await bot.sendMessage(chatId, `✅ Користувача ${targetId} схвалено.`);
-  await bot.sendMessage(targetId, WELCOME_MESSAGE, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD }).catch(() => {});
-  return;
-}
     // HELP
     if (text === "ℹ️ Допомога" || text === "/help") {
       const adminExtra = telegramId === ADMIN_ID
-        ? `\n\n👑 *Адмін-команди:*\n/users — список всіх з ID\n/remove — зручний вибір кого видалити з рейтингів (кнопками)\n/ban ID — видалити з рейтингів вручну\n/unban ID — повернути в рейтинги`
+        ? `\n\n👑 *Адмін-команди:*\n/users — список всіх з ID\n/ban ID — видалити з рейтингів\n/unban ID — повернути в рейтинги\n/broadcast текст — розсилка всім`
         : "";
       await bot.sendMessage(chatId, `ℹ️ *Як користуватися ботом*\n\n🧠 *Квіз* — відповідайте А, Б, В або Г\n🎭 *Рольові ігри* — /feedback для порад, /end для завершення\n📅 *Виклик дня* — одна відповідь на день\n🔔 /notifications — сповіщення вкл/викл\n⏰ /settime — час сповіщень${adminExtra}`, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
       return;
@@ -1384,25 +922,13 @@ if (text.startsWith("/approve ") && telegramId === ADMIN_ID) {
 
         const medals = ["🥇", "🥈", "🥉"];
 
-        // Заголовок зі зведеною статистикою команди (без кнопок)
-        const header = `📊 *Статистика команди*\n\n` +
-          `👥 Всього: ${totalUsers} | 🟢 активні сьогодні\n` +
-          `📝 Питань пройдено: ${totalQuestions}\n` +
-          `📈 Середній результат: ${avgPct}%\n` +
-          `⬜️ Ще не проходили квіз: ${neverQuiz}\n` +
-          `⚠️ Ще не робили рольову: ${neverRoleplay}\n\n` +
-          `_🟢 <24г | 🟡 <3 дні | 🔴 >3 дні | ⚠️ нема рольової_`;
-
-        await bot.sendMessage(chatId, header, { parse_mode: "Markdown" });
-
-        // Окреме повідомлення на кожного користувача з кнопкою "Написати"
-        for (let i = 0; i < rows.length; i++) {
-          const u = rows[i];
+        const userLines = rows.map((u: any, i: number) => {
           const pct = u.quiz_total > 0 ? Math.round((u.quiz_score / u.quiz_total) * 100) : 0;
           const level = u.quiz_total === 0 ? "⬜️" : pct >= 80 ? "🏆" : pct >= 60 ? "📈" : pct >= 40 ? "📚" : "🌱";
           const name = u.first_name ?? u.username ?? `ID:${u.telegram_id}`;
           const roleplayMark = u.roleplay_count === 0 ? " ⚠️" : ` 🎭${u.roleplay_count}`;
 
+          // Остання активність
           const lastActive = u.last_active_at ? new Date(u.last_active_at) : null;
           let activeMark = "";
           if (lastActive) {
@@ -1416,25 +942,58 @@ if (text.startsWith("/approve ") && telegramId === ADMIN_ID) {
             ? `${u.quiz_score}/${u.quiz_total} (${pct}%)`
             : "не проходив";
 
-          const line = `${medals[i] ?? `${i + 1}.`} ${level} *${name}*${activeMark} — ${quizPart}${roleplayMark}\n🆔 \`${u.telegram_id}\``;
+          const idPart = `\n    🆔 \`${u.telegram_id}\``;
 
-          // Кнопка "Написати" відкриває особистий чат з менеджером у Telegram (тільки для адміна)
-          await bot.sendMessage(chatId, line, {
-            parse_mode: "Markdown",
-            reply_markup: {
-              inline_keyboard: [[
-                { text: "💬 Написати", url: `tg://user?id=${u.telegram_id}` },
-              ]],
-            },
-          });
+          return `${medals[i] ?? `${i + 1}.`} ${level} *${name}*${activeMark} — ${quizPart}${roleplayMark}${idPart}`;
+        });
+
+        // Розбиваємо на частини якщо забагато (Telegram ліміт ~4096 символів)
+        const header = `📊 *Статистика команди*\n\n` +
+          `👥 Всього: ${totalUsers} | 🟢 активні сьогодні\n` +
+          `📝 Питань пройдено: ${totalQuestions}\n` +
+          `📈 Середній результат: ${avgPct}%\n` +
+          `⬜️ Ще не проходили квіз: ${neverQuiz}\n` +
+          `⚠️ Ще не робили рольову: ${neverRoleplay}\n\n` +
+          `_🟢 <24г | 🟡 <3 дні | 🔴 >3 дні | ⚠️ нема рольової_\n\n`;
+
+        const allLines = userLines.join("\n");
+        const fullMsg = header + allLines;
+
+        // Відправляємо частинами якщо довго
+        if (fullMsg.length <= 4000) {
+          await bot.sendMessage(chatId, fullMsg, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
+        } else {
+          await bot.sendMessage(chatId, header + userLines.slice(0, 15).join("\n"), { parse_mode: "Markdown" });
+          await bot.sendMessage(chatId, userLines.slice(15).join("\n"), { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
         }
-
-        await sendMain(chatId, "👆 Статистика команди вище.");
       } else {
         const pct = user.quiz_total > 0 ? Math.round((user.quiz_score / user.quiz_total) * 100) : 0;
         const level = pct >= 80 ? "🏆 Експерт" : pct >= 60 ? "📈 Середній" : pct >= 40 ? "📚 Навчається" : "🌱 Початківець";
         await bot.sendMessage(chatId, `📊 *Моя статистика: ${user.first_name ?? "Менеджер"}*\n\n🧠 Квіз: ${user.quiz_score}/${user.quiz_total} (${pct}%) — ${level}\n🎭 Рольових ігор: ${user.roleplay_count}`, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
       }
+      return;
+    }
+
+    // BROADCAST (тільки адмін) — /broadcast текст повідомлення
+    if (telegramId === ADMIN_ID && text.startsWith("/broadcast ")) {
+      const broadcastText = text.replace("/broadcast ", "").trim();
+      if (!broadcastText) {
+        await bot.sendMessage(chatId, "⚠️ Вкажіть текст: `/broadcast Привіт команда!`", { parse_mode: "Markdown" });
+        return;
+      }
+      const users = await getAllApprovedUsers();
+      await bot.sendMessage(chatId, `📤 Починаю розсилку для ${users.length} користувачів...`);
+      let sent = 0, failed = 0;
+      for (const u of users) {
+        try {
+          await bot.sendMessage(u.telegram_id, broadcastText, { parse_mode: "Markdown" });
+          sent++;
+        } catch {
+          failed++;
+        }
+        await new Promise(r => setTimeout(r, 100));
+      }
+      await bot.sendMessage(chatId, `✅ Розсилку завершено!\n📨 Надіслано: ${sent}\n❌ Помилок: ${failed}`, MAIN_MENU_KEYBOARD);
       return;
     }
 
@@ -1474,32 +1033,6 @@ if (text.startsWith("/approve ") && telegramId === ADMIN_ID) {
           await bot.sendMessage(chatId, lines.slice(12).join("\n\n"), { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
         }
       }
-      return;
-    }
-
-    // REMOVE MENU (тільки адмін) — зручний вибір співробітника кнопками замість ручного копіювання ID
-    if (telegramId === ADMIN_ID && (text === "/remove" || text === "🗑 Видалити співробітника")) {
-      const allUsers = await pool.query(
-        `SELECT u.telegram_id, u.first_name, u.username, ar.status as access_status
-         FROM users u
-         LEFT JOIN access_requests ar ON u.telegram_id = ar.telegram_id
-         WHERE u.telegram_id != $1
-           AND (ar.status IS NULL OR ar.status != 'banned')
-         ORDER BY u.first_name ASC NULLS LAST`,
-        [ADMIN_ID]
-      );
-      const rows = allUsers.rows;
-      if (rows.length === 0) { await sendMain(chatId, "👥 Немає кого видаляти — список порожній."); return; }
-
-      const keyboard = rows.map((u: any) => {
-        const name = u.first_name ?? u.username ?? `ID:${u.telegram_id}`;
-        return [{ text: name, callback_data: `rmpick_${u.telegram_id}` }];
-      });
-
-      await bot.sendMessage(chatId, "🗑 *Видалити співробітника*\n\nОберіть, кого прибрати з рейтингів (можна відновити пізніше):", {
-        parse_mode: "Markdown",
-        reply_markup: { inline_keyboard: keyboard },
-      });
       return;
     }
 
@@ -2165,49 +1698,7 @@ bot.on("audio", async (msg) => {
     await bot.sendMessage(chatId, "⚠️ Помилка аналізу. Спробуйте ще раз.");
   }
 });
-// ─── ДЕНЬ НЕЗАЛЕЖНОСТІ ────────────────────────────────────────────────────────
-cron.schedule("0 6 20-23 8 *", async () => {
-  const today = new Date();
-  const day = today.getUTCDate();
-  const daysLeft = 24 - day;
 
-  const messages: Record<number, string> = {
-    20: `🇺🇦 *До Дня Незалежності — ${daysLeft} дні!*\n\n` +
-      `🎁 Ікра в склі — ідеальний святковий подарунок!\n\n` +
-      `Скляна банка виглядає презентабельно, добре пакується і одразу створює святковий настрій 🥂\n\n` +
-      `📞 *Скрипт:*\n_«До 24 серпня залишилось ${daysLeft} дні — саме час запропонувати клієнту ікру в склі як подарунок. Виглядає святково, доїде вчасно!»_\n\n` +
-      `💪 Дзвони клієнтам — час святкових замовлень вже зараз! 🚀`,
-
-    21: `🇺🇦 *До Дня Незалежності — ${daysLeft} дні!*\n\n` +
-      `⏰ Нагадуй клієнтам про терміни доставки!\n\n` +
-      `Нова Пошта доставляє 1-2 дні. Хто замовить сьогодні — встигне отримати до свята 📦\n\n` +
-      `📞 *Скрипт:*\n_«До 24 серпня залишилось ${daysLeft} дні. Якщо замовити сьогодні — ікра точно встигне до свята. Підказати що краще взяти до святкового столу?»_\n\n` +
-      `💪 Кожен дзвінок сьогодні — це замовлення до свята! 🚀`,
-
-    22: `🇺🇦 *До Дня Незалежності — ${daysLeft} день!*\n\n` +
-      `🔥 Останній день для гарантованої доставки!\n\n` +
-      `Хто замовить сьогодні — встигне отримати завтра до свята 📦\n\n` +
-      `📞 *Скрипт:*\n_«Сьогодні останній день щоб замовити і отримати ікру до 24 серпня. Є акція 4=6 з безкоштовною доставкою — оформляємо?»_\n\n` +
-      `💪 Сьогодні фінальний ривок — дзвони всім! 🚀`,
-
-    23: `🇺🇦 *Завтра День Незалежності України!*\n\n` +
-      `🥂 Привітай клієнтів зі святом!\n\n` +
-      `Надішли привітання постійним клієнтам — це зміцнює стосунки і нагадує про тебе 💛\n\n` +
-      `📞 *Скрипт привітання:*\n_«Вітаю з Днем Незалежності України! Бажаю миру, здоров'я і смачних свят. Якщо захочете ікру до столу — завжди на зв'язку 🇺🇦»_\n\n` +
-      `💪 Слава Україні! 🇺🇦`,
-  };
-
-  const text = messages[day];
-  if (!text) return;
-
-  const users = await pool.query(
-    "SELECT telegram_id FROM access_requests WHERE status = 'approved'"
-  );
-
-  for (const user of users.rows) {
-    await bot.sendMessage(user.telegram_id, text, { parse_mode: "Markdown" }).catch(() => {});
-  }
-});
 bot.on("polling_error", (err) => console.error("Polling error:", err));
 
 // ─── APPROVE / REJECT CALLBACKS ───────────────────────────────────────────────
@@ -2245,52 +1736,5 @@ bot.on("callback_query", async (query) => {
       { chat_id: query.message?.chat.id, message_id: query.message?.message_id }
     ).catch(() => {});
     await bot.sendMessage(targetId, "🚫 На жаль, ваш запит на доступ відхилено. Зверніться до адміністратора.").catch(() => {});
-  }
-
-  // ─── ВИДАЛЕННЯ СПІВРОБІТНИКА (вибір зі списку) ───────────────────────────
-  const rmPickMatch = data.match(/^rmpick_(.+)$/);
-  const rmConfirmMatch = data.match(/^rmconfirm_(.+)$/);
-  const rmCancelMatch = data.match(/^rmcancel_(.+)$/);
-
-  if (rmPickMatch) {
-    const targetId = rmPickMatch[1];
-    const u = await getUser(targetId);
-    const name = u?.first_name ?? u?.username ?? `ID:${targetId}`;
-    await bot.answerCallbackQuery(query.id);
-    await bot.editMessageText(
-      `⚠️ Видалити *${name}* з рейтингів?\n\nІсторію (квізи, рольові) буде збережено — можна відновити через /unban.`,
-      {
-        chat_id: query.message?.chat.id,
-        message_id: query.message?.message_id,
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [[
-            { text: "✅ Так, видалити", callback_data: `rmconfirm_${targetId}` },
-            { text: "↩️ Скасувати", callback_data: `rmcancel_${targetId}` },
-          ]],
-        },
-      }
-    ).catch(() => {});
-  }
-
-  if (rmConfirmMatch) {
-    const targetId = rmConfirmMatch[1];
-    const u = await getUser(targetId);
-    const name = u?.first_name ?? u?.username ?? `ID:${targetId}`;
-    await banUser(targetId);
-    await bot.answerCallbackQuery(query.id, { text: "🚫 Видалено" });
-    await bot.editMessageText(`🚫 *${name}* видален${name.endsWith("а") ? "а" : "ий"} з рейтингів.`, {
-      chat_id: query.message?.chat.id,
-      message_id: query.message?.message_id,
-      parse_mode: "Markdown",
-    }).catch(() => {});
-  }
-
-  if (rmCancelMatch) {
-    await bot.answerCallbackQuery(query.id, { text: "Скасовано" });
-    await bot.editMessageText("↩️ Видалення скасовано.", {
-      chat_id: query.message?.chat.id,
-      message_id: query.message?.message_id,
-    }).catch(() => {});
   }
 });

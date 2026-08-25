@@ -405,7 +405,7 @@ function sanitizeUkrainian(text: string): string {
 
 async function geminiChat(systemPrompt: string, userMessage: string, maxTokens = 1024): Promise<string> {
   const response = await groq.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
+    model: "llama-3.1-8b-instant",
     max_tokens: maxTokens,
     messages: [
       { role: "system", content: systemPrompt },

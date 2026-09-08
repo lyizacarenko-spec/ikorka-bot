@@ -405,7 +405,7 @@ function sanitizeUkrainian(text: string): string {
 
 async function geminiChat(systemPrompt: string, userMessage: string, maxTokens = 1024): Promise<string> {
   const response = await groq.chat.completions.create({
-model: "openai/gpt-oss-20b",
+    model: "llama-3.3-70b-versatile",
     max_tokens: maxTokens,
     messages: [
       { role: "system", content: systemPrompt },
@@ -550,30 +550,52 @@ async function generateQuizQuestion(previousTopics: string[] = [], previousQuest
     ? available[Math.floor(Math.random() * available.length)]
     : IKORKA_TOPICS[Math.floor(Math.random() * IKORKA_TOPICS.length)];
 
+  // Випадкова позиція правильної відповіді (0-3)
+  const correctPosition = Math.floor(Math.random() * 4);
+  const positionLabels = ["А", "Б", "В", "Г"];
+  const correctLabel = positionLabels[correctPosition];
+
   const prevQuestionsNote = previousQuestions.length > 0
     ? `\n\nВЖЕ ВИКОРИСТАНІ ПИТАННЯ (не повторювати):\n${previousQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")}`
     : "";
 
+  // Різні типи питань для різноманіття
+  const questionTypes = [
+    "питання про точну ціну конкретного продукту",
+    "питання про розмір зерна ікри",
+    "питання про умови акції",
+    "питання про відмінність упаковок (скло vs пластик)",
+    "питання про рекомендацію для клієнта",
+    "питання про крем-сир Philadelphia",
+    "питання про слабосолену рибу",
+    "ситуаційне питання — що відповісти клієнту",
+    "питання про зберігання продукту",
+    "питання про преміум лінійку",
+  ];
+  const questionType = questionTypes[Math.floor(Math.random() * questionTypes.length)];
+
   const systemPrompt = `${IKORKA_KNOWLEDGE}${prevQuestionsNote}
 
 Створи питання для тесту менеджера з продажу на тему: "${topic}".
+Тип питання: ${questionType}.
 
 СУВОРІ ПРАВИЛА ФОРМАТУ:
-1. Поверни ТІЛЬКИ валідний JSON, без markdown-блоків
-2. Формат варіантів відповідей: ["А) текст", "Б) текст", "В) текст", "Г) текст"]
-3. ЗАБОРОНЕНО виділяти правильну відповідь — всі 4 варіанти однаково
-4. correctIndex — індекс правильної відповіді (0–3)
-5. Весь текст ТІЛЬКИ українською мовою — жодних польських, англійських чи інших слів!
-6. ЗАБОРОНЕНО дублювати варіанти відповідей — всі 4 варіанти мають бути різними числами або текстами
-7. Використовуй точні дані з бази знань — не вигадуй ціни чи розміри зерна
-8. ВАЖЛИВО щодо акції 1+1=3: це означає купуєш 2 банки — 3-тя безкоштовно. БЕЗ обов'язкової знижки -5% на інші банки.
+1. Поверни ТІЛЬКИ валідний JSON, без markdown-блоків і без зайвого тексту
+2. Правильна відповідь МАЄ бути на позиції ${correctLabel} (індекс ${correctPosition}) — це ОБОВ'ЯЗКОВО
+3. correctIndex = ${correctPosition} — ЗАВЖДИ саме це число, не змінювати!
+4. Формат: ["А) текст", "Б) текст", "В) текст", "Г) текст"]
+5. Весь текст ТІЛЬКИ українською мовою
+6. Всі 4 варіанти мають бути різними і правдоподібними (не очевидно неправильними)
+7. Використовуй точні дані з бази знань — не вигадуй ціни
+8. Акція 1+1=3: купуєш 2 банки — 3-тя безкоштовно (без знижки -5%)
+9. НЕ починай питання з "Яка ціна" щоразу — роби різні формулювання
 
 JSON:
 {
   "question": "текст питання",
-  "options": ["А) варіант1", "Б) варіант2", "В) варіант3", "Г) варіант4"],
-  "correctIndex": 0,
-  "explanation": "коротке пояснення з точними даними",
+  "options": ["А) ...", "Б) ...", "В) ...", "Г) ..."],
+  "correctIndex": ${correctPosition},
+  "explanation": "коротке пояснення чому саме ${correctLabel} правильна відповідь",
   "topic": "${topic}"
 }`;
 
@@ -595,6 +617,20 @@ JSON:
   if (!parsed?.question || !Array.isArray(parsed?.options) || parsed.options.length < 4 || parsed.correctIndex === undefined) {
     console.warn(`Quiz invalid structure (attempt ${attempt}):`, JSON.stringify(parsed).slice(0, 200));
     return generateQuizQuestion(previousTopics, previousQuestions, attempt + 1);
+  }
+
+  // Примусово виставляємо правильну позицію якщо модель проігнорувала
+  if (parsed.correctIndex !== correctPosition) {
+    console.warn(`Model ignored correctIndex (got ${parsed.correctIndex}, expected ${correctPosition}) — swapping`);
+    const correctAnswer = parsed.options[parsed.correctIndex];
+    const displaced = parsed.options[correctPosition];
+    parsed.options[correctPosition] = correctAnswer;
+    parsed.options[parsed.correctIndex] = displaced;
+    parsed.options = parsed.options.map((opt: string, i: number) => {
+      const withoutPrefix = opt.replace(/^[А-ГA-D]\) /, "");
+      return `${positionLabels[i]}) ${withoutPrefix}`;
+    });
+    parsed.correctIndex = correctPosition;
   }
 
   parsed.options = parsed.options.map((opt: string) =>

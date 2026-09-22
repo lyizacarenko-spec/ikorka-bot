@@ -593,14 +593,9 @@ const IKORKA_TOPICS = [
   "техніка допродажу до замовлення",
 ];
 
-// ─── PHOTO QUIZ ───────────────────────────────────────────────────────────────
-// Варіант 1: Фото продукту → питання про ціну/характеристику
-// Варіант 2: Крупний план зерна → "вгадай продукт"
-// Варіант 3: Ситуаційне — текст сценарію (без фото)
-
 interface PhotoQuizQuestion {
   type: 1 | 2 | 3;
-  photoUrl?: string;       // URL або file_id фото
+  photoUrl?: string;
   caption: string;         // Підпис під фото або текст питання
   question: string;        // Текст питання
   options: string[];       // 4 варіанти відповіді
@@ -760,64 +755,6 @@ const PHOTO_QUIZ_QUESTIONS: PhotoQuizQuestion[] = [
     topic: "акція 3=4 допродаж",
   },
 ];
-
-async function sendPhotoQuizQuestion(chatId: number | string, telegramId: string, state: any) {
-  try {
-    const available = PHOTO_QUIZ_QUESTIONS.filter(
-      (q, i) => !((state.usedPhotoIndices ?? []).includes(i))
-    );
-    if (available.length === 0) {
-      // Всі питання використано — скидаємо
-      state.usedPhotoIndices = [];
-    }
-    const pool2 = PHOTO_QUIZ_QUESTIONS.filter(
-      (q, i) => !((state.usedPhotoIndices ?? []).includes(
-        PHOTO_QUIZ_QUESTIONS.indexOf(q)
-      ))
-    );
-    const qList = pool2.length > 0 ? pool2 : PHOTO_QUIZ_QUESTIONS;
-    const randIdx = Math.floor(Math.random() * qList.length);
-    const q = qList[randIdx];
-    const globalIdx = PHOTO_QUIZ_QUESTIONS.indexOf(q);
-
-    state.usedPhotoIndices = [...(state.usedPhotoIndices ?? []), globalIdx];
-    state.currentPhotoQuestion = { ...q, globalIdx };
-    await upsertSession(telegramId, "photo_quiz", state);
-
-    const keyboard = {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "А", callback_data: "pq_0" },
-            { text: "Б", callback_data: "pq_1" },
-            { text: "В", callback_data: "pq_2" },
-            { text: "Г", callback_data: "pq_3" },
-          ],
-          [{ text: "🏁 Завершити", callback_data: "pq_end" }],
-        ],
-      },
-    };
-
-    const questionText = `📸 *Питання ${state.questionNumber}*\n\n${q.question}\n\n${q.options.join("\n")}`;
-
-    if (q.type !== 3 && q.photoUrl) {
-      await bot.sendPhoto(chatId as number, q.photoUrl, {
-        caption: `${q.caption}\n\n${questionText}`,
-        parse_mode: "Markdown",
-        ...keyboard,
-      });
-    } else {
-      await bot.sendMessage(chatId, questionText, {
-        parse_mode: "Markdown",
-        ...keyboard,
-      });
-    }
-  } catch (err) {
-    console.error("Photo quiz error:", err);
-    await sendMain(chatId, "⚠️ Не вдалося завантажити питання. Спробуйте ще раз.");
-    await deleteSession(telegramId);
-  }
-}
 
 async function generateQuizQuestion(previousTopics: string[] = [], previousQuestions: string[] = [], attempt = 0): Promise<any> {
   if (attempt >= 5) {
@@ -1114,7 +1051,6 @@ const MAIN_MENU_KEYBOARD = {
       [{ text: "🗓 Тижень" }, { text: "📊 Моя статистика" }],
       [{ text: "🧮 Калькулятор акцій" }, { text: "💰 Калькулятор цін" }],
       [{ text: "📜 Скрипти" }, { text: "ℹ️ Допомога" }],
-      [{ text: "📸 Фото-квіз" }],
     ],
     resize_keyboard: true,
     persistent: true,
@@ -1463,30 +1399,24 @@ bot.on("message", async (msg) => {
       const dateObj = new Date(challenge.date + "T00:00:00Z");
       const dateStr = dateObj.toLocaleDateString("uk-UA", { day: "numeric", month: "long", timeZone: "UTC" });
       const options = typeof challenge.options === "string" ? JSON.parse(challenge.options) : challenge.options;
+      await upsertSession(telegramId, "daily", { challengeId: challenge.id, date: challenge.date });
       const photoMatch = challenge.question.match(/^\[PHOTO:(\d+)\]\s*([\s\S]+)$/);
-      await upsertSession(telegramId, "daily", { challengeId: challenge.id, date: challenge.date, isPhotoChallenge: !!photoMatch });
       if (photoMatch) {
         const pqIdx = parseInt(photoMatch[1]);
         const pq = PHOTO_QUIZ_QUESTIONS[pqIdx];
         const realQuestion = photoMatch[2];
-        const inlineKb = {
-          reply_markup: {
-            inline_keyboard: [
-              options.slice(0, 2).map((opt: string, i: number) => ({ text: opt, callback_data: `dc_${i}` })),
-              options.slice(2).map((opt: string, i: number) => ({ text: opt, callback_data: `dc_${i + 2}` })),
-            ]
-          }
-        };
-        const caption = `📅 *Виклик дня — ${dateStr}*\n\n${pq?.caption ?? ""}\n\n${realQuestion}`;
         if (pq?.photoUrl) {
-          await bot.sendPhoto(chatId as number, pq.photoUrl, { caption, parse_mode: "Markdown", ...inlineKb }).catch(() =>
-            bot.sendMessage(chatId, `📅 *Виклик дня — ${dateStr}*\n\n${realQuestion}\n\n${options.join("\n")}`, { parse_mode: "Markdown", ...inlineKb })
-          );
-        } else {
-          await bot.sendMessage(chatId, `📅 *Виклик дня — ${dateStr}*\n\n${realQuestion}\n\n${options.join("\n")}`, { parse_mode: "Markdown", ...inlineKb });
+          await bot.sendPhoto(chatId as number, pq.photoUrl, {
+            caption: pq.caption ?? "",
+            parse_mode: "Markdown",
+          }).catch(() => {});
         }
+        await bot.sendMessage(chatId, `📅 *Виклик дня — ${dateStr}*\n\n${realQuestion}\n\n${options.join("\n")}\n\n_Відповідайте А, Б, В або Г_`, {
+          parse_mode: "Markdown",
+          reply_markup: { remove_keyboard: true },
+        });
       } else {
-        await bot.sendMessage(chatId, `📅 *Виклик дня — ${dateStr}*\n\n${challenge.question}\n\n${options.join("\n")}`, {
+        await bot.sendMessage(chatId, `📅 *Виклик дня — ${dateStr}*\n\n${challenge.question}\n\n${options.join("\n")}\n\n_Відповідайте А, Б, В або Г_`, {
           parse_mode: "Markdown",
           reply_markup: { remove_keyboard: true },
         });
@@ -1731,17 +1661,6 @@ bot.on("message", async (msg) => {
       return;
     }
 
-    // PHOTO QUIZ
-    if (text === "📸 Фото-квіз") {
-      const state = { questionNumber: 1, score: 0, total: 0, usedPhotoIndices: [], currentPhotoQuestion: null };
-      await bot.sendMessage(chatId,
-        `📸 *Фото-квіз*\n\nВітаємо у фото-квізі! Тут ви:\n🔸 Впізнаватимете ікру за фото\n🔸 Визначатимете продукт за зерном\n🔸 Вирішуватимете реальні ситуації\n\nВсього ${PHOTO_QUIZ_QUESTIONS.length} питань. Поїхали! 🚀`,
-        { parse_mode: "Markdown" }
-      );
-      await sendPhotoQuizQuestion(chatId, telegramId, state);
-      return;
-    }
-
     // PROMO CALCULATOR
     if (text === "🧮 Калькулятор акцій" || text === "🧮 Калькулятор знижок") {
       await bot.sendMessage(chatId,
@@ -1937,37 +1856,23 @@ cron.schedule("0 * * * *", async () => {
   const options = typeof challenge.options === "string" ? JSON.parse(challenge.options) : challenge.options;
   const dateStr = new Date(date + "T00:00:00Z").toLocaleDateString("uk-UA", { day: "numeric", month: "long", timeZone: "UTC" });
   const photoMatch = challenge.question.match(/^\[PHOTO:(\d+)\]\s*([\s\S]+)$/);
+  const pqForCron = photoMatch ? PHOTO_QUIZ_QUESTIONS[parseInt(photoMatch[1])] : null;
+  const realQuestion = photoMatch ? photoMatch[2] : challenge.question;
   for (const user of users) {
     const existing = await getDailyResponse(user.telegram_id, date);
     if (existing) continue;
     const greeting = `Доброго ранку${user.first_name ? `, ${user.first_name}` : ""}!\n\n`;
-    await upsertSession(user.telegram_id, "daily", { challengeId: challenge.id, date: challenge.date ?? date, isPhotoChallenge: !!photoMatch });
-    if (photoMatch) {
-      const pqIdx = parseInt(photoMatch[1]);
-      const pq = PHOTO_QUIZ_QUESTIONS[pqIdx];
-      const realQuestion = photoMatch[2];
-      const inlineKb = {
-        reply_markup: {
-          inline_keyboard: [
-            options.slice(0, 2).map((opt: string, i: number) => ({ text: opt, callback_data: `dc_${i}` })),
-            options.slice(2).map((opt: string, i: number) => ({ text: opt, callback_data: `dc_${i + 2}` })),
-          ]
-        }
-      };
-      const caption = `📅 *Виклик дня — ${dateStr}*\n\n${greeting}${pq?.caption ?? ""}\n\n${realQuestion}`;
-      if (pq?.photoUrl) {
-        await bot.sendPhoto(user.telegram_id, pq.photoUrl, { caption, parse_mode: "Markdown", ...inlineKb }).catch(async () => {
-          await bot.sendMessage(user.telegram_id, `📅 *Виклик дня — ${dateStr}*\n\n${greeting}${realQuestion}\n\n${options.join("\n")}`, { parse_mode: "Markdown", ...inlineKb }).catch(() => {});
-        });
-      } else {
-        await bot.sendMessage(user.telegram_id, `📅 *Виклик дня — ${dateStr}*\n\n${greeting}${realQuestion}\n\n${options.join("\n")}`, { parse_mode: "Markdown", ...inlineKb }).catch(() => {});
-      }
-    } else {
-      await bot.sendMessage(user.telegram_id,
-        `📅 *Виклик дня — ${dateStr}*\n\n${greeting}${challenge.question}\n\n${options.join("\n")}\n\n_Відповідайте А, Б, В або Г_`,
-        { parse_mode: "Markdown" }
-      ).catch(() => {});
+    await upsertSession(user.telegram_id, "daily", { challengeId: challenge.id, date: challenge.date ?? date });
+    if (pqForCron?.photoUrl) {
+      await bot.sendPhoto(user.telegram_id, pqForCron.photoUrl, {
+        caption: pqForCron.caption ?? "",
+        parse_mode: "Markdown",
+      }).catch(() => {});
     }
+    await bot.sendMessage(user.telegram_id,
+      `📅 *Виклик дня — ${dateStr}*\n\n${greeting}${realQuestion}\n\n${options.join("\n")}\n\n_Відповідайте А, Б, В або Г_`,
+      { parse_mode: "Markdown" }
+    ).catch(() => {});
   }
 });
 
@@ -2123,131 +2028,6 @@ bot.on("callback_query", async (query) => {
   const telegramId = String(query.from.id);
   const data = query.data ?? "";
 
-  // ── PHOTO QUIZ ANSWERS ────────────────────────────────────────────────────
-  if (data.startsWith("pq_")) {
-    await bot.answerCallbackQuery(query.id).catch(() => {});
-
-    if (data === "pq_done") return; // already answered, ignore tap
-
-  // ── DAILY CHALLENGE PHOTO ANSWER ─────────────────────────────────────────
-  if (data.startsWith("dc_")) {
-    await bot.answerCallbackQuery(query.id).catch(() => {});
-    const answerIndex = parseInt(data.replace("dc_", ""));
-    const session = await getActiveSession(telegramId);
-    const dcState = session?.state ?? {};
-    if (!dcState.challengeId || !dcState.isPhotoChallenge) {
-      await bot.answerCallbackQuery(query.id, { text: "⚠️ Виклик не знайдено." }).catch(() => {});
-      return;
-    }
-    const existing = await getDailyResponse(telegramId, dcState.date);
-    if (existing) {
-      await bot.answerCallbackQuery(query.id, { text: "Ви вже відповіли сьогодні!" }).catch(() => {});
-      return;
-    }
-    const user = await getOrCreateUser(telegramId);
-    const challenge = await getDailyChallengeById(dcState.challengeId);
-    if (!challenge) { await deleteSession(telegramId); return; }
-    const correct = answerIndex === challenge.correct_index;
-    await saveDailyResponse(telegramId, user?.first_name, user?.username, dcState.date, correct);
-    await deleteSession(telegramId);
-    const stats = await getDailyStats(dcState.date);
-    const topNames = stats.topCorrect.map((u: any) => u.firstName ?? u.username ?? "Анонім").join(", ");
-    // Edit inline keyboard to show correct answer
-    const options: string[] = typeof challenge.options === "string" ? JSON.parse(challenge.options) : challenge.options;
-    await bot.editMessageReplyMarkup(
-      { inline_keyboard: [
-        options.slice(0, 2).map((opt: string, i: number) => ({ text: `${i === challenge.correct_index ? "✅" : i === answerIndex && !correct ? "❌" : "⬜"} ${opt}`, callback_data: "dc_done" })),
-        options.slice(2).map((opt: string, i: number) => ({ text: `${i + 2 === challenge.correct_index ? "✅" : i + 2 === answerIndex && !correct ? "❌" : "⬜"} ${opt}`, callback_data: "dc_done" })),
-      ]},
-      { chat_id: chatId, message_id: query.message?.message_id }
-    ).catch(() => {});
-    await bot.sendMessage(chatId!,
-      `${correct ? "✅" : "❌"} *${correct ? "Правильно!" : "Неправильно."}*\n\n💡 ${challenge.explanation}\n\n📊 Команда: ${stats.totalAnswered} відповіли, ${stats.totalCorrect} (${stats.correctPct}%) правильно${topNames ? `\n🌟 Правильно: ${topNames}` : ""}`,
-      { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD }
-    );
-    return;
-  }
-
-  if (data === "dc_done") { await bot.answerCallbackQuery(query.id).catch(() => {}); return; }
-
-    if (data === "pq_end") {
-      const session = await getActiveSession(telegramId);
-      const state = session?.state ?? {};
-      const score = state.score ?? 0;
-      const total = state.total ?? 0;
-      const pct = total > 0 ? Math.round((score / total) * 100) : 0;
-      let emoji = pct >= 80 ? "🏆" : pct >= 50 ? "👍" : "📚";
-      await deleteSession(telegramId);
-      await bot.sendMessage(chatId!,
-        `${emoji} *Фото-квіз завершено!*\n\nРезультат: *${score}/${total}* (${pct}%)\n\n${pct >= 80 ? "Чудовий результат! Ти чудово знаєш продукти!" : pct >= 50 ? "Непогано! Є куди рости — практикуйся ще!" : "Треба підтягнути знання — спробуй ще раз!"}`,
-        { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD }
-      );
-      return;
-    }
-
-    const answerIndex = parseInt(data.replace("pq_", ""));
-    const session = await getActiveSession(telegramId);
-    const state = session?.state ?? {};
-    const q: PhotoQuizQuestion | null = state.currentPhotoQuestion ?? null;
-
-    if (!q) {
-      await bot.sendMessage(chatId!, "⚠️ Сесію не знайдено. Натисніть 📸 Фото-квіз щоб почати знову.", MAIN_MENU_KEYBOARD);
-      return;
-    }
-
-    const isCorrect = answerIndex === q.correctIndex;
-    const correctLetter = ["А", "Б", "В", "Г"][q.correctIndex];
-    const resultText = isCorrect
-      ? `✅ *Правильно!*\n\n${q.explanation}`
-      : `❌ *Неправильно.*\nПравильна відповідь: *${correctLetter}*\n\n${q.explanation}`;
-
-    // Edit inline keyboard to show result
-    await bot.editMessageReplyMarkup(
-      { inline_keyboard: q.options.map((opt: string, i: number) => [{
-        text: `${i === q.correctIndex ? "✅" : i === answerIndex && !isCorrect ? "❌" : "⬜"} ${["А","Б","В","Г"][i]}. ${opt.replace(/^[А-Г]\.\s*/, "")}`,
-        callback_data: "pq_done"
-      }])},
-      { chat_id: chatId, message_id: query.message?.message_id }
-    ).catch(() => {});
-
-    const newScore = (state.score ?? 0) + (isCorrect ? 1 : 0);
-    const newTotal = (state.total ?? 0) + 1;
-    const newState = { ...state, score: newScore, total: newTotal, currentPhotoQuestion: null };
-
-    const remaining = PHOTO_QUIZ_QUESTIONS.length - (newState.usedPhotoIndices?.length ?? 0);
-
-    if (remaining > 0) {
-      await bot.sendMessage(chatId!, resultText, {
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [[{ text: "➡️ Далі", callback_data: "pq_next" }]]
-        }
-      });
-      await upsertSession(telegramId, "photo_quiz", { ...newState, questionNumber: (state.questionNumber ?? 1) + 1 });
-    } else {
-      await bot.sendMessage(chatId!, resultText, { parse_mode: "Markdown" });
-      // Quiz finished
-      const pct = Math.round((newScore / newTotal) * 100);
-      let emoji = pct >= 80 ? "🏆" : pct >= 50 ? "👍" : "📚";
-      await deleteSession(telegramId);
-      await bot.sendMessage(chatId!,
-        `${emoji} *Фото-квіз завершено!*\n\nРезультат: *${newScore}/${newTotal}* (${pct}%)\n\n${pct >= 80 ? "Відмінно! Ти справжній експерт Ikorka Shop!" : pct >= 50 ? "Непогано! Продовжуй тренуватися!" : "Підтягни знання — спробуй ще раз!"}`,
-        { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD }
-      );
-    }
-    return;
-  }
-
-  if (data === "pq_next") {
-    await bot.answerCallbackQuery(query.id).catch(() => {});
-    const session = await getActiveSession(telegramId);
-    if (session?.mode === "photo_quiz") {
-      await sendPhotoQuizQuestion(chatId!, telegramId, session.state);
-    } else {
-      await bot.sendMessage(chatId!, "⚠️ Сесію не знайдено.", MAIN_MENU_KEYBOARD);
-    }
-    return;
-  }
 
   // ── ADMIN CALLBACKS ───────────────────────────────────────────────────────
   const adminId = telegramId;

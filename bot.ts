@@ -221,6 +221,20 @@ async function getOrCreateDailyChallenge(generateFn: () => Promise<any>) {
   const date = getTodayDate();
   const res = await pool.query("SELECT * FROM daily_challenges WHERE date = $1", [date]);
   if (res.rows.length > 0) return res.rows[0];
+
+  // Кожен 3-й день — фото-питання (якщо є тип 1 або 2 з photoUrl)
+  const dayNum = Math.floor(Date.now() / 86400000);
+  const usePhotoQ = dayNum % 3 === 0;
+  const photoPool = PHOTO_QUIZ_QUESTIONS.filter(q => q.type !== 3 && q.photoUrl);
+  if (usePhotoQ && photoPool.length > 0) {
+    const pq = photoPool[dayNum % photoPool.length];
+    const ins = await pool.query(
+      "INSERT INTO daily_challenges (date, question, options, correct_index, explanation, topic) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *",
+      [date, `[PHOTO:${PHOTO_QUIZ_QUESTIONS.indexOf(pq)}] ${pq.question}`, JSON.stringify(pq.options), pq.correctIndex, pq.explanation, pq.topic]
+    );
+    return ins.rows[0];
+  }
+
   const data = await generateFn();
   const ins = await pool.query(
     "INSERT INTO daily_challenges (date, question, options, correct_index, explanation, topic) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *",
@@ -541,6 +555,15 @@ const IKORKA_KNOWLEDGE = `
 ЗБЕРІГАННЯ: ікра закрита — 3 місяці при 0-5°C; після відкриття — 14 діб у холодильнику.
 КОМІСІЯ НП: 2% від суми + 20 грн — завжди попереджай клієнта!
 ФОТО ПРОДУКТІВ: https://t.me/+KPwmfo_kSy83Yjhi
+
+═══ ОБОВ'ЯЗКОВИЙ СКРИПТ ПРИ ОФОРМЛЕННІ ЗАМОВЛЕННЯ ═══
+⚠️ КОЖЕН МЕНЕДЖЕР МАЄ ОБОВ'ЯЗКОВО ПРОГОВОРЮВАТИ ПРИ ОФОРМЛЕННІ:
+1. Попросити клієнта ПЕРЕВІРИТИ посилку на Новій Пошті при отриманні
+2. У разі бою/пошкодження — ОБОВ'ЯЗКОВО фіксувати на відділенні НП одразу
+3. БЕЗ акту фіксації на НП — компанія НЕ може зробити заміну або компенсацію
+4. Комісія НП при накладеному платежі — 2% + 20 грн — оплачує ОТРИМУВАЧ
+5. Перевірити КІЛЬКІСТЬ товару та цілісність упаковки при отриманні
+Мета: уникнення конфліктних ситуацій та непорозумінь з клієнтами.
 `;
 
 const IKORKA_TOPICS = [
@@ -569,6 +592,232 @@ const IKORKA_TOPICS = [
   "різниця між Преміум та звичайною ікрою",
   "техніка допродажу до замовлення",
 ];
+
+// ─── PHOTO QUIZ ───────────────────────────────────────────────────────────────
+// Варіант 1: Фото продукту → питання про ціну/характеристику
+// Варіант 2: Крупний план зерна → "вгадай продукт"
+// Варіант 3: Ситуаційне — текст сценарію (без фото)
+
+interface PhotoQuizQuestion {
+  type: 1 | 2 | 3;
+  photoUrl?: string;       // URL або file_id фото
+  caption: string;         // Підпис під фото або текст питання
+  question: string;        // Текст питання
+  options: string[];       // 4 варіанти відповіді
+  correctIndex: number;    // 0-3
+  explanation: string;     // Пояснення
+  topic: string;
+}
+
+const PHOTO_QUIZ_QUESTIONS: PhotoQuizQuestion[] = [
+  // ─── ВАРІАНТ 1: Фото продукту → питання про ціну ───
+  {
+    type: 1,
+    photoUrl: "https://i.postimg.cc/K8cGfryZ/2024-02-10-0342.jpg", // замінити на реальне фото кети преміум
+    caption: "🔍 Подивіться на продукт",
+    question: "Яка ціна Кети Преміум скло 500г?",
+    options: ["А) 539 грн", "Б) 569 грн", "В) 599 грн", "Г) 619 грн"],
+    correctIndex: 2,
+    explanation: "Кета Преміум скло 500г — 599 грн. Звичайна Кета скло 500г — 539 грн.",
+    topic: "ціна кети преміум",
+  },
+  {
+    type: 1,
+    photoUrl: "https://i.postimg.cc/K8cGfryZ/2024-02-10-0342.jpg", // замінити на фото осетра преміум
+    caption: "🔍 Подивіться на продукт",
+    question: "Яка ціна Осетра Преміум скло 500г?",
+    options: ["А) 549 грн", "Б) 589 грн", "В) 609 грн", "Г) 619 грн"],
+    correctIndex: 3,
+    explanation: "Осетер Преміум скло 500г — 619 грн. Звичайний Осетер скло 440г — 549 грн.",
+    topic: "ціна осетра преміум",
+  },
+  {
+    type: 1,
+    photoUrl: "https://i.postimg.cc/K8cGfryZ/2024-02-10-0342.jpg", // замінити на фото philadelphia balance
+    caption: "🔍 Подивіться на продукт",
+    question: "Яка ціна Philadelphia Balance 195г і що означає 'Balance'?",
+    options: [
+      "А) 105 грн, підвищений вміст білка",
+      "Б) 115 грн, знижений вміст жиру -30%",
+      "В) 125 грн, з додаванням зелені",
+      "Г) 115 грн, без солі"
+    ],
+    correctIndex: 1,
+    explanation: "Philadelphia Balance 195г — 115 грн. 'Balance' означає знижений вміст жиру на 30% — ніжний вершковий смак, ідеально до ікри та риби.",
+    topic: "philadelphia balance характеристики",
+  },
+  {
+    type: 1,
+    photoUrl: "https://i.postimg.cc/K8cGfryZ/2024-02-10-0342.jpg", // замінити на фото риби 500г
+    caption: "🔍 Слабосолена риба",
+    question: "Яка ціна слабосоленої риби 500г і яка акція діє?",
+    options: [
+      "А) 449 грн, кожна 2-га по 429 грн",
+      "Б) 499 грн, кожна 2-га по 459 грн",
+      "В) 499 грн, без знижки",
+      "Г) 519 грн, кожна 2-га по 479 грн"
+    ],
+    correctIndex: 1,
+    explanation: "Риба 500г — 499 грн. Акція: кожна друга упаковка зі знижкою по 459 грн.",
+    topic: "риба 500г ціна акція",
+  },
+  // ─── ВАРІАНТ 2: Крупний план зерна → вгадай продукт ───
+  {
+    type: 2,
+    photoUrl: "https://i.postimg.cc/K8cGfryZ/2024-02-10-0342.jpg", // замінити на фото веслоноса на круасанах
+    caption: "🔬 Крупний план ікри",
+    question: "Зерно дуже дрібне, 1.5–2 мм, чорного кольору. Що це за продукт?",
+    options: ["А) Осетрова ікра", "Б) Щучина ікра", "В) Ікра Веслоноса", "Г) Форелева ікра"],
+    correctIndex: 2,
+    explanation: "Веслонос — найдрібніше зерно 1.5–2 мм. Схожа на чорну ікру, але коштує дешевше — 559 грн (скло 500г).",
+    topic: "розмір зерна веслонос",
+  },
+  {
+    type: 2,
+    photoUrl: "https://i.postimg.cc/K8cGfryZ/2024-02-10-0342.jpg", // замінити на фото кети преміум зерно
+    caption: "🔬 Крупний план ікри",
+    question: "Яскраво-оранжеве зерно, дуже велике — 6–8 мм. Це:",
+    options: ["А) Горбуша Преміум", "Б) Лосось", "В) Кета Преміум", "Г) Кижуч"],
+    correctIndex: 2,
+    explanation: "Кета Преміум має найбільше зерно — 6–8 мм! Для порівняння: Лосось 5–6 мм, Горбуша Преміум 5–6 мм, Кижуч 5–5.5 мм.",
+    topic: "розмір зерна кета преміум",
+  },
+  {
+    type: 2,
+    photoUrl: "https://i.postimg.cc/K8cGfryZ/2024-02-10-0342.jpg", // замінити на фото осетра преміум чорна ікра
+    caption: "🔬 Крупний план ікри",
+    question: "Чорна ікра, зерно 3–3.5 мм, блискуча. Це:",
+    options: ["А) Ікра Веслоноса", "Б) Осетер Преміум", "В) Щука Преміум", "Г) Кижуч"],
+    correctIndex: 1,
+    explanation: "Осетер Преміум — чорна ікра з зерном 3–3.5 мм (звичайний Осетер — 2.5–3 мм). Ціна 619 грн скло 500г.",
+    topic: "розмір зерна осетер преміум",
+  },
+  {
+    type: 2,
+    photoUrl: "https://i.postimg.cc/K8cGfryZ/2024-02-10-0342.jpg", // замінити на фото лосося (насичено червоний)
+    caption: "🔬 Крупний план ікри",
+    question: "Насичено-червона ікра, зерно 5–6 мм. Що це?",
+    options: ["А) Кета звичайна", "Б) Кижуч", "В) Лосось", "Г) Горбуша Преміум"],
+    correctIndex: 2,
+    explanation: "Ікра лосося — насичено-червона, зерно 5–6 мм. Від Кети відрізняється більш темним, насиченим кольором. Ціна 509 грн (скло 500г).",
+    topic: "розмір зерна лосось",
+  },
+  // ─── ВАРІАНТ 3: Ситуаційні питання про НП та оформлення ───
+  {
+    type: 3,
+    caption: "",
+    question: "📦 Клієнт отримав посилку і каже: 'Одна банка розбилась при доставці! Що робити?'\n\nЯка ПРАВИЛЬНА відповідь менеджера?",
+    options: [
+      "А) Вибачаюсь, надішлемо нову банку за рахунок магазину",
+      "Б) Зверніться в Нову Пошту, ми не несемо відповідальності",
+      "В) Чи оформили ви акт про пошкодження на відділенні НП при отриманні?",
+      "Г) Надішліть фото — розглянемо питання"
+    ],
+    correctIndex: 2,
+    explanation: "Без акту фіксації на НП компанія НЕ може зробити заміну або компенсацію. Менеджер має з'ясувати чи є акт — і якщо є, вирішити питання. Якщо немає — пояснити чому це важливо робити відразу.",
+    topic: "скрипт оформлення НП пошкодження",
+  },
+  {
+    type: 3,
+    caption: "",
+    question: "💳 Клієнт питає: 'Скільки коштує доставка і чому я маю платити комісію?'\n\nЩо відповідає менеджер?",
+    options: [
+      "А) Доставка безкоштовна при будь-якому замовленні",
+      "Б) Доставка НП за тарифами НП. При накладеному платежі є комісія НП 2%+20 грн — це умови НП, не наша комісія",
+      "В) Комісія 5% — за обробку платежу",
+      "Г) Доставка 100 грн фіксовано"
+    ],
+    correctIndex: 1,
+    explanation: "Доставка за тарифами Нової Пошти. При накладеному платежі НП стягує свою комісію 2%+20 грн з отримувача — це умови НП, менеджер лише попереджає клієнта заздалегідь.",
+    topic: "скрипт оформлення НП комісія",
+  },
+  {
+    type: 3,
+    caption: "",
+    question: "📋 Що ОБОВ'ЯЗКОВО менеджер має сказати клієнту при оформленні замовлення? (оберіть найповніший варіант)",
+    options: [
+      "А) Номер відстеження та очікувану дату доставки",
+      "Б) Тільки загальну суму замовлення і дату відправки",
+      "В) Перевірити посилку на НП, фіксувати пошкодження одразу, комісія НП 2%+20 грн, перевірити кількість і упаковку",
+      "Г) Скласти список замовлення і попросити оплатити"
+    ],
+    correctIndex: 2,
+    explanation: "Обов'язковий скрипт при оформленні: 1) перевірка посилки на НП, 2) фіксація пошкоджень одразу, 3) без акту НП — немає заміни, 4) комісія НП 2%+20 грн за отримувачем, 5) перевірка кількості та упаковки.",
+    topic: "скрипт оформлення НП повний",
+  },
+  {
+    type: 3,
+    caption: "",
+    question: "🛒 Клієнт хоче купити 3 банки ікри. Як правильно запропонувати щоб він взяв 4 і заощадив?",
+    options: [
+      "А) Скажіть що є знижка 10% при купівлі 4 банок",
+      "Б) При 4 банках — акція 3=4: четверта безкоштовно + безкоштовна доставка! Фактично ви отримуєте одну банку в подарунок",
+      "В) Запропонуйте знижку 5% на всі 3 банки",
+      "Г) Скажіть що при 3 банках є безкоштовна доставка"
+    ],
+    correctIndex: 1,
+    explanation: "Акція 3=4: купуєш 3 — четверта безкоштовно + безкоштовна доставка. Це найкращий аргумент: клієнт заощаджує вартість однієї банки. Ще вигідніша акція 4=6 (дві безкоштовно).",
+    topic: "акція 3=4 допродаж",
+  },
+];
+
+async function sendPhotoQuizQuestion(chatId: number | string, telegramId: string, state: any) {
+  try {
+    const available = PHOTO_QUIZ_QUESTIONS.filter(
+      (q, i) => !((state.usedPhotoIndices ?? []).includes(i))
+    );
+    if (available.length === 0) {
+      // Всі питання використано — скидаємо
+      state.usedPhotoIndices = [];
+    }
+    const pool2 = PHOTO_QUIZ_QUESTIONS.filter(
+      (q, i) => !((state.usedPhotoIndices ?? []).includes(
+        PHOTO_QUIZ_QUESTIONS.indexOf(q)
+      ))
+    );
+    const qList = pool2.length > 0 ? pool2 : PHOTO_QUIZ_QUESTIONS;
+    const randIdx = Math.floor(Math.random() * qList.length);
+    const q = qList[randIdx];
+    const globalIdx = PHOTO_QUIZ_QUESTIONS.indexOf(q);
+
+    state.usedPhotoIndices = [...(state.usedPhotoIndices ?? []), globalIdx];
+    state.currentPhotoQuestion = { ...q, globalIdx };
+    await upsertSession(telegramId, "photo_quiz", state);
+
+    const keyboard = {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "А", callback_data: "pq_0" },
+            { text: "Б", callback_data: "pq_1" },
+            { text: "В", callback_data: "pq_2" },
+            { text: "Г", callback_data: "pq_3" },
+          ],
+          [{ text: "🏁 Завершити", callback_data: "pq_end" }],
+        ],
+      },
+    };
+
+    const questionText = `📸 *Питання ${state.questionNumber}*\n\n${q.question}\n\n${q.options.join("\n")}`;
+
+    if (q.type !== 3 && q.photoUrl) {
+      await bot.sendPhoto(chatId as number, q.photoUrl, {
+        caption: `${q.caption}\n\n${questionText}`,
+        parse_mode: "Markdown",
+        ...keyboard,
+      });
+    } else {
+      await bot.sendMessage(chatId, questionText, {
+        parse_mode: "Markdown",
+        ...keyboard,
+      });
+    }
+  } catch (err) {
+    console.error("Photo quiz error:", err);
+    await sendMain(chatId, "⚠️ Не вдалося завантажити питання. Спробуйте ще раз.");
+    await deleteSession(telegramId);
+  }
+}
 
 async function generateQuizQuestion(previousTopics: string[] = [], previousQuestions: string[] = [], attempt = 0): Promise<any> {
   if (attempt >= 5) {
@@ -817,6 +1066,24 @@ const SCRIPTS: Record<string, string> = {
 4️⃣ *Нагадай умову*
 "Беремо? Нагадую — Philadelphia тільки разом з ікрою або рибою, окремо не відправляємо."`,
 
+  np: `📦 *Скрипт: Оформлення замовлення — обов'язкове інформування*
+
+⚠️ *ПРОГОВОРЮЄМО КОЖНОМУ КЛІЄНТУ:*
+
+1️⃣ *Перевірка посилки*
+"Обов'язково перевірте посилку на Новій Пошті — при вас, до того як підписати і забрати!"
+
+2️⃣ *Фіксація пошкоджень*
+"Якщо будь-що пошкоджено або розбито — одразу фіксуйте акт на відділенні. Без акту НП ми не зможемо зробити заміну чи компенсацію."
+
+3️⃣ *Комісія НП*
+"Нагадую: при накладеному платежі Нова Пошта стягує комісію 2% від суми + 20 грн — це оплачуєте ви як отримувач."
+
+4️⃣ *Кількість та упаковка*
+"Перевірте кількість товару та цілісність кожної упаковки при отриманні."
+
+✅ *Мета:* уникнути непорозумінь і конфліктних ситуацій після доставки.`,
+
   ryba: `🐟 *Скрипт: Продаж риби*
 
 1️⃣ *Запропонуй до ікри*
@@ -847,6 +1114,7 @@ const MAIN_MENU_KEYBOARD = {
       [{ text: "🗓 Тижень" }, { text: "📊 Моя статистика" }],
       [{ text: "🧮 Калькулятор акцій" }, { text: "💰 Калькулятор цін" }],
       [{ text: "📜 Скрипти" }, { text: "ℹ️ Допомога" }],
+      [{ text: "📸 Фото-квіз" }],
     ],
     resize_keyboard: true,
     persistent: true,
@@ -1195,11 +1463,34 @@ bot.on("message", async (msg) => {
       const dateObj = new Date(challenge.date + "T00:00:00Z");
       const dateStr = dateObj.toLocaleDateString("uk-UA", { day: "numeric", month: "long", timeZone: "UTC" });
       const options = typeof challenge.options === "string" ? JSON.parse(challenge.options) : challenge.options;
-      await upsertSession(telegramId, "daily", { challengeId: challenge.id, date: challenge.date });
-      await bot.sendMessage(chatId, `📅 *Виклик дня — ${dateStr}*\n\n${challenge.question}\n\n${options.join("\n")}`, {
-        parse_mode: "Markdown",
-        reply_markup: { remove_keyboard: true },
-      });
+      const photoMatch = challenge.question.match(/^\[PHOTO:(\d+)\]\s*([\s\S]+)$/);
+      await upsertSession(telegramId, "daily", { challengeId: challenge.id, date: challenge.date, isPhotoChallenge: !!photoMatch });
+      if (photoMatch) {
+        const pqIdx = parseInt(photoMatch[1]);
+        const pq = PHOTO_QUIZ_QUESTIONS[pqIdx];
+        const realQuestion = photoMatch[2];
+        const inlineKb = {
+          reply_markup: {
+            inline_keyboard: [
+              options.slice(0, 2).map((opt: string, i: number) => ({ text: opt, callback_data: `dc_${i}` })),
+              options.slice(2).map((opt: string, i: number) => ({ text: opt, callback_data: `dc_${i + 2}` })),
+            ]
+          }
+        };
+        const caption = `📅 *Виклик дня — ${dateStr}*\n\n${pq?.caption ?? ""}\n\n${realQuestion}`;
+        if (pq?.photoUrl) {
+          await bot.sendPhoto(chatId as number, pq.photoUrl, { caption, parse_mode: "Markdown", ...inlineKb }).catch(() =>
+            bot.sendMessage(chatId, `📅 *Виклик дня — ${dateStr}*\n\n${realQuestion}\n\n${options.join("\n")}`, { parse_mode: "Markdown", ...inlineKb })
+          );
+        } else {
+          await bot.sendMessage(chatId, `📅 *Виклик дня — ${dateStr}*\n\n${realQuestion}\n\n${options.join("\n")}`, { parse_mode: "Markdown", ...inlineKb });
+        }
+      } else {
+        await bot.sendMessage(chatId, `📅 *Виклик дня — ${dateStr}*\n\n${challenge.question}\n\n${options.join("\n")}`, {
+          parse_mode: "Markdown",
+          reply_markup: { remove_keyboard: true },
+        });
+      }
       return;
     }
 
@@ -1401,6 +1692,7 @@ bot.on("message", async (msg) => {
             [{ text: "💰 Скрипт: Дорого" }, { text: "📦 Скрипт: Закриття" }],
             [{ text: "🤝 Скрипт: Теплий дзвінок" }],
             [{ text: "🧀 Скрипт: Philadelphia" }, { text: "🐟 Скрипт: Риба" }],
+            [{ text: "🚚 Скрипт: Оформлення НП" }],
             [{ text: "🧮 Калькулятор знижок" }, { text: "🏠 Головне меню" }],
           ],
           resize_keyboard: true,
@@ -1431,6 +1723,22 @@ bot.on("message", async (msg) => {
 
     if (text === "🐟 Скрипт: Риба") {
       await bot.sendMessage(chatId, SCRIPTS.ryba, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
+      return;
+    }
+
+    if (text === "🚚 Скрипт: Оформлення НП") {
+      await bot.sendMessage(chatId, SCRIPTS.np, { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD });
+      return;
+    }
+
+    // PHOTO QUIZ
+    if (text === "📸 Фото-квіз") {
+      const state = { questionNumber: 1, score: 0, total: 0, usedPhotoIndices: [], currentPhotoQuestion: null };
+      await bot.sendMessage(chatId,
+        `📸 *Фото-квіз*\n\nВітаємо у фото-квізі! Тут ви:\n🔸 Впізнаватимете ікру за фото\n🔸 Визначатимете продукт за зерном\n🔸 Вирішуватимете реальні ситуації\n\nВсього ${PHOTO_QUIZ_QUESTIONS.length} питань. Поїхали! 🚀`,
+        { parse_mode: "Markdown" }
+      );
+      await sendPhotoQuizQuestion(chatId, telegramId, state);
       return;
     }
 
@@ -1628,14 +1936,38 @@ cron.schedule("0 * * * *", async () => {
   const challenge = await getOrCreateDailyChallenge(() => generateQuizQuestion());
   const options = typeof challenge.options === "string" ? JSON.parse(challenge.options) : challenge.options;
   const dateStr = new Date(date + "T00:00:00Z").toLocaleDateString("uk-UA", { day: "numeric", month: "long", timeZone: "UTC" });
+  const photoMatch = challenge.question.match(/^\[PHOTO:(\d+)\]\s*([\s\S]+)$/);
   for (const user of users) {
     const existing = await getDailyResponse(user.telegram_id, date);
     if (existing) continue;
-    await bot.sendMessage(user.telegram_id,
-      `📅 *Виклик дня — ${dateStr}*\n\nДоброго ранку${user.first_name ? `, ${user.first_name}` : ""}!\n\n${challenge.question}\n\n${options.join("\n")}\n\n_Відповідайте А, Б, В або Г_`,
-      { parse_mode: "Markdown" }
-    ).catch(() => {});
-    await upsertSession(user.telegram_id, "daily", { challengeId: challenge.id, date: challenge.date ?? date });
+    const greeting = `Доброго ранку${user.first_name ? `, ${user.first_name}` : ""}!\n\n`;
+    await upsertSession(user.telegram_id, "daily", { challengeId: challenge.id, date: challenge.date ?? date, isPhotoChallenge: !!photoMatch });
+    if (photoMatch) {
+      const pqIdx = parseInt(photoMatch[1]);
+      const pq = PHOTO_QUIZ_QUESTIONS[pqIdx];
+      const realQuestion = photoMatch[2];
+      const inlineKb = {
+        reply_markup: {
+          inline_keyboard: [
+            options.slice(0, 2).map((opt: string, i: number) => ({ text: opt, callback_data: `dc_${i}` })),
+            options.slice(2).map((opt: string, i: number) => ({ text: opt, callback_data: `dc_${i + 2}` })),
+          ]
+        }
+      };
+      const caption = `📅 *Виклик дня — ${dateStr}*\n\n${greeting}${pq?.caption ?? ""}\n\n${realQuestion}`;
+      if (pq?.photoUrl) {
+        await bot.sendPhoto(user.telegram_id, pq.photoUrl, { caption, parse_mode: "Markdown", ...inlineKb }).catch(async () => {
+          await bot.sendMessage(user.telegram_id, `📅 *Виклик дня — ${dateStr}*\n\n${greeting}${realQuestion}\n\n${options.join("\n")}`, { parse_mode: "Markdown", ...inlineKb }).catch(() => {});
+        });
+      } else {
+        await bot.sendMessage(user.telegram_id, `📅 *Виклик дня — ${dateStr}*\n\n${greeting}${realQuestion}\n\n${options.join("\n")}`, { parse_mode: "Markdown", ...inlineKb }).catch(() => {});
+      }
+    } else {
+      await bot.sendMessage(user.telegram_id,
+        `📅 *Виклик дня — ${dateStr}*\n\n${greeting}${challenge.question}\n\n${options.join("\n")}\n\n_Відповідайте А, Б, В або Г_`,
+        { parse_mode: "Markdown" }
+      ).catch(() => {});
+    }
   }
 });
 
@@ -1787,13 +2119,142 @@ bot.on("polling_error", (err) => console.error("Polling error:", err));
 
 // ─── APPROVE / REJECT CALLBACKS ───────────────────────────────────────────────
 bot.on("callback_query", async (query) => {
-  const adminId = String(query.from.id);
+  const chatId = query.message?.chat.id;
+  const telegramId = String(query.from.id);
+  const data = query.data ?? "";
+
+  // ── PHOTO QUIZ ANSWERS ────────────────────────────────────────────────────
+  if (data.startsWith("pq_")) {
+    await bot.answerCallbackQuery(query.id).catch(() => {});
+
+    if (data === "pq_done") return; // already answered, ignore tap
+
+  // ── DAILY CHALLENGE PHOTO ANSWER ─────────────────────────────────────────
+  if (data.startsWith("dc_")) {
+    await bot.answerCallbackQuery(query.id).catch(() => {});
+    const answerIndex = parseInt(data.replace("dc_", ""));
+    const session = await getActiveSession(telegramId);
+    const dcState = session?.state ?? {};
+    if (!dcState.challengeId || !dcState.isPhotoChallenge) {
+      await bot.answerCallbackQuery(query.id, { text: "⚠️ Виклик не знайдено." }).catch(() => {});
+      return;
+    }
+    const existing = await getDailyResponse(telegramId, dcState.date);
+    if (existing) {
+      await bot.answerCallbackQuery(query.id, { text: "Ви вже відповіли сьогодні!" }).catch(() => {});
+      return;
+    }
+    const user = await getOrCreateUser(telegramId);
+    const challenge = await getDailyChallengeById(dcState.challengeId);
+    if (!challenge) { await deleteSession(telegramId); return; }
+    const correct = answerIndex === challenge.correct_index;
+    await saveDailyResponse(telegramId, user?.first_name, user?.username, dcState.date, correct);
+    await deleteSession(telegramId);
+    const stats = await getDailyStats(dcState.date);
+    const topNames = stats.topCorrect.map((u: any) => u.firstName ?? u.username ?? "Анонім").join(", ");
+    // Edit inline keyboard to show correct answer
+    const options: string[] = typeof challenge.options === "string" ? JSON.parse(challenge.options) : challenge.options;
+    await bot.editMessageReplyMarkup(
+      { inline_keyboard: [
+        options.slice(0, 2).map((opt: string, i: number) => ({ text: `${i === challenge.correct_index ? "✅" : i === answerIndex && !correct ? "❌" : "⬜"} ${opt}`, callback_data: "dc_done" })),
+        options.slice(2).map((opt: string, i: number) => ({ text: `${i + 2 === challenge.correct_index ? "✅" : i + 2 === answerIndex && !correct ? "❌" : "⬜"} ${opt}`, callback_data: "dc_done" })),
+      ]},
+      { chat_id: chatId, message_id: query.message?.message_id }
+    ).catch(() => {});
+    await bot.sendMessage(chatId!,
+      `${correct ? "✅" : "❌"} *${correct ? "Правильно!" : "Неправильно."}*\n\n💡 ${challenge.explanation}\n\n📊 Команда: ${stats.totalAnswered} відповіли, ${stats.totalCorrect} (${stats.correctPct}%) правильно${topNames ? `\n🌟 Правильно: ${topNames}` : ""}`,
+      { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD }
+    );
+    return;
+  }
+
+  if (data === "dc_done") { await bot.answerCallbackQuery(query.id).catch(() => {}); return; }
+
+    if (data === "pq_end") {
+      const session = await getActiveSession(telegramId);
+      const state = session?.state ?? {};
+      const score = state.score ?? 0;
+      const total = state.total ?? 0;
+      const pct = total > 0 ? Math.round((score / total) * 100) : 0;
+      let emoji = pct >= 80 ? "🏆" : pct >= 50 ? "👍" : "📚";
+      await deleteSession(telegramId);
+      await bot.sendMessage(chatId!,
+        `${emoji} *Фото-квіз завершено!*\n\nРезультат: *${score}/${total}* (${pct}%)\n\n${pct >= 80 ? "Чудовий результат! Ти чудово знаєш продукти!" : pct >= 50 ? "Непогано! Є куди рости — практикуйся ще!" : "Треба підтягнути знання — спробуй ще раз!"}`,
+        { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD }
+      );
+      return;
+    }
+
+    const answerIndex = parseInt(data.replace("pq_", ""));
+    const session = await getActiveSession(telegramId);
+    const state = session?.state ?? {};
+    const q: PhotoQuizQuestion | null = state.currentPhotoQuestion ?? null;
+
+    if (!q) {
+      await bot.sendMessage(chatId!, "⚠️ Сесію не знайдено. Натисніть 📸 Фото-квіз щоб почати знову.", MAIN_MENU_KEYBOARD);
+      return;
+    }
+
+    const isCorrect = answerIndex === q.correctIndex;
+    const correctLetter = ["А", "Б", "В", "Г"][q.correctIndex];
+    const resultText = isCorrect
+      ? `✅ *Правильно!*\n\n${q.explanation}`
+      : `❌ *Неправильно.*\nПравильна відповідь: *${correctLetter}*\n\n${q.explanation}`;
+
+    // Edit inline keyboard to show result
+    await bot.editMessageReplyMarkup(
+      { inline_keyboard: q.options.map((opt: string, i: number) => [{
+        text: `${i === q.correctIndex ? "✅" : i === answerIndex && !isCorrect ? "❌" : "⬜"} ${["А","Б","В","Г"][i]}. ${opt.replace(/^[А-Г]\.\s*/, "")}`,
+        callback_data: "pq_done"
+      }])},
+      { chat_id: chatId, message_id: query.message?.message_id }
+    ).catch(() => {});
+
+    const newScore = (state.score ?? 0) + (isCorrect ? 1 : 0);
+    const newTotal = (state.total ?? 0) + 1;
+    const newState = { ...state, score: newScore, total: newTotal, currentPhotoQuestion: null };
+
+    const remaining = PHOTO_QUIZ_QUESTIONS.length - (newState.usedPhotoIndices?.length ?? 0);
+
+    if (remaining > 0) {
+      await bot.sendMessage(chatId!, resultText, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [[{ text: "➡️ Далі", callback_data: "pq_next" }]]
+        }
+      });
+      await upsertSession(telegramId, "photo_quiz", { ...newState, questionNumber: (state.questionNumber ?? 1) + 1 });
+    } else {
+      await bot.sendMessage(chatId!, resultText, { parse_mode: "Markdown" });
+      // Quiz finished
+      const pct = Math.round((newScore / newTotal) * 100);
+      let emoji = pct >= 80 ? "🏆" : pct >= 50 ? "👍" : "📚";
+      await deleteSession(telegramId);
+      await bot.sendMessage(chatId!,
+        `${emoji} *Фото-квіз завершено!*\n\nРезультат: *${newScore}/${newTotal}* (${pct}%)\n\n${pct >= 80 ? "Відмінно! Ти справжній експерт Ikorka Shop!" : pct >= 50 ? "Непогано! Продовжуй тренуватися!" : "Підтягни знання — спробуй ще раз!"}`,
+        { parse_mode: "Markdown", ...MAIN_MENU_KEYBOARD }
+      );
+    }
+    return;
+  }
+
+  if (data === "pq_next") {
+    await bot.answerCallbackQuery(query.id).catch(() => {});
+    const session = await getActiveSession(telegramId);
+    if (session?.mode === "photo_quiz") {
+      await sendPhotoQuizQuestion(chatId!, telegramId, session.state);
+    } else {
+      await bot.sendMessage(chatId!, "⚠️ Сесію не знайдено.", MAIN_MENU_KEYBOARD);
+    }
+    return;
+  }
+
+  // ── ADMIN CALLBACKS ───────────────────────────────────────────────────────
+  const adminId = telegramId;
   if (adminId !== ADMIN_ID) {
     await bot.answerCallbackQuery(query.id, { text: "⛔ Немає прав." });
     return;
   }
-
-  const data = query.data ?? "";
   const approveMatch = data.match(/^approve_(.+)$/);
   const rejectMatch = data.match(/^reject_(.+)$/);
 
